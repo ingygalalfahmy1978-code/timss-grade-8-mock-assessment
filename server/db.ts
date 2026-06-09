@@ -75,7 +75,7 @@ export async function getPlatformUserByUsername(username: string) {
   const result = await db
     .select()
     .from(platformUsers)
-    .where(eq(platformUsers.username, username))
+    .where(sql`LOWER(${platformUsers.username}) = LOWER(${username})`)
     .limit(1);
   return result[0];
 }
