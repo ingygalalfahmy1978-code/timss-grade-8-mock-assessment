@@ -1,28 +1,822 @@
 import { COOKIE_NAME } from "@shared/const";
+import { TRPCError } from "@trpc/server";
+import { createHash } from "crypto";
+import { SignJWT, jwtVerify } from "jose";
+import { z } from "zod";
+import {
+  assignExamToClass,
+  createClass,
+  createExam,
+  createPlatformUser,
+  createQuestion,
+  deactivateExamForClass,
+  deleteClass,
+  deletePlatformUser,
+  deleteQuestion,
+  enrollStudentInClass,
+  getAllClasses,
+  getAllExams,
+  getAllPlatformUsers,
+  getAllQuestions,
+  getAnswersForAttempt,
+  getAttemptById,
+  getAttemptsByClass,
+  getAttemptsByExamAndClass,
+  getAttemptsByStudent,
+  getClassById,
+  getClassExamAssignments,
+  getClassesForStudent,
+  getExamById,
+  getExamWithQuestions,
+  getOrCreateAttempt,
+  getPlatformUserById,
+  getPlatformUserByUsername,
+  getReportByAttemptId,
+  getReportsByClass,
+  getReportsByStudent,
+  getStudentsInClass,
+  removeStudentFromClass,
+  saveStudentAnswer,
+  saveStudentReport,
+  setExamQuestions,
+  submitAttempt,
+  updateClass,
+  updateExam,
+  updatePlatformUser,
+  updateQuestion,
+} from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { ENV } from "./_core/env";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function hashPassword(password: string): string {
+  return createHash("sha256").update(password + "timss_salt_2024").digest("hex");
+}
+
+const JWT_SECRET = new TextEncoder().encode(ENV.cookieSecret || "timss_jwt_secret_2024");
+
+async function signPlatformToken(userId: number, role: string): Promise<string> {
+  return new SignJWT({ sub: String(userId), role })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("8h")
+    .sign(JWT_SECRET);
+}
+
+async function verifyPlatformToken(token: string) {
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+const PLATFORM_COOKIE = "timss_session";
+
+// ─── Middleware ───────────────────────────────────────────────────────────────
+const platformProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  const token = ctx.req.cookies?.[PLATFORM_COOKIE];
+  if (!token) throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
+  const payload = await verifyPlatformToken(token);
+  if (!payload || !payload.sub) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid session" });
+  const user = await getPlatformUserById(Number(payload.sub));
+  if (!user || !user.isActive) throw new TRPCError({ code: "UNAUTHORIZED", message: "User not found" });
+  return next({ ctx: { ...ctx, platformUser: user } });
+});
+
+const adminProcedure = platformProcedure.use(({ ctx, next }) => {
+  if (ctx.platformUser.role !== "admin")
+    throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+  return next({ ctx });
+});
+
+const teacherOrAdminProcedure = platformProcedure.use(({ ctx, next }) => {
+  if (ctx.platformUser.role !== "admin" && ctx.platformUser.role !== "teacher")
+    throw new TRPCError({ code: "FORBIDDEN", message: "Teacher or Admin access required" });
+  return next({ ctx });
+});
+
+// ─── Report Generation Helper ─────────────────────────────────────────────────
+function generateReportData(
+  student: { id: number; name: string },
+  exam: { id: number; name: string },
+  className: string,
+  attempt: {
+    totalScore: number | null;
+    totalQuestions: number | null;
+    mathScore: number | null;
+    mathTotal: number | null;
+    scienceScore: number | null;
+    scienceTotal: number | null;
+    domainBreakdown: unknown;
+    timeSpentSeconds: number | null;
+    submittedAt: Date | null;
+  },
+  answers: Array<{ questionId: number; answerGiven: string | null; isCorrect: boolean | null }>,
+  questionsList: Array<{
+    id: number;
+    subject: string;
+    contentDomain: string;
+    cognitiveDomain: string;
+    difficulty: string;
+    questionType: string;
+    correctAnswer: string;
+  }>
+) {
+  const totalScore = attempt.totalScore ?? 0;
+  const totalQuestions = attempt.totalQuestions ?? 0;
+  const percentage = totalQuestions > 0 ? Math.round((totalScore / totalQuestions) * 100) : 0;
+
+  const domainBreakdown = attempt.domainBreakdown as Record<string, Record<string, { correct: number; total: number }>> | null;
+
+  // Identify strengths and weaknesses
+  const contentDomainScores: Record<string, { correct: number; total: number }> = {};
+  const cognitiveDomainScores: Record<string, { correct: number; total: number }> = {};
+
+  for (const ans of answers) {
+    const q = questionsList.find((q) => q.id === ans.questionId);
+    if (!q) continue;
+    if (!contentDomainScores[q.contentDomain]) contentDomainScores[q.contentDomain] = { correct: 0, total: 0 };
+    if (!cognitiveDomainScores[q.cognitiveDomain]) cognitiveDomainScores[q.cognitiveDomain] = { correct: 0, total: 0 };
+    contentDomainScores[q.contentDomain].total++;
+    cognitiveDomainScores[q.cognitiveDomain].total++;
+    if (ans.isCorrect) {
+      contentDomainScores[q.contentDomain].correct++;
+      cognitiveDomainScores[q.cognitiveDomain].correct++;
+    }
+  }
+
+  const strengths: string[] = [];
+  const weaknesses: string[] = [];
+  for (const [domain, scores] of Object.entries(contentDomainScores)) {
+    const pct = scores.total > 0 ? (scores.correct / scores.total) * 100 : 0;
+    if (pct >= 70) strengths.push(domain);
+    else if (pct < 50) weaknesses.push(domain);
+  }
+
+  // Misconception notes
+  const misconceptions: string[] = [];
+  for (const ans of answers) {
+    if (ans.isCorrect === false) {
+      const q = questionsList.find((q) => q.id === ans.questionId);
+      if (q) misconceptions.push(`${q.subject} – ${q.contentDomain} (${q.cognitiveDomain})`);
+    }
+  }
+
+  // Intervention group
+  let interventionGroup = "Group A – Advanced";
+  if (percentage < 40) interventionGroup = "Group D – Intensive Support";
+  else if (percentage < 60) interventionGroup = "Group C – Targeted Intervention";
+  else if (percentage < 75) interventionGroup = "Group B – Consolidation";
+
+  // Next practice targets
+  const nextTargets: string[] = weaknesses.map((w) => `Review and practice: ${w}`);
+  if (nextTargets.length === 0) nextTargets.push("Challenge extension tasks across all domains");
+
+  return {
+    studentName: student.name,
+    className,
+    examName: exam.name,
+    totalScore,
+    totalQuestions,
+    percentage,
+    mathScore: attempt.mathScore ?? 0,
+    mathTotal: attempt.mathTotal ?? 0,
+    scienceScore: attempt.scienceScore ?? 0,
+    scienceTotal: attempt.scienceTotal ?? 0,
+    contentDomainBreakdown: contentDomainScores,
+    cognitiveDomainBreakdown: cognitiveDomainScores,
+    strengths: strengths.length > 0 ? strengths : ["No areas of strength identified yet"],
+    weaknesses: weaknesses.length > 0 ? weaknesses : ["No significant weaknesses identified"],
+    misconceptionNotes:
+      misconceptions.length > 0
+        ? Array.from(new Set(misconceptions)).slice(0, 5)
+        : ["No misconceptions identified"],
+    recommendedInterventionGroup: interventionGroup,
+    nextPracticeTargets: nextTargets,
+    timeSpentSeconds: attempt.timeSpentSeconds ?? 0,
+    submittedAt: attempt.submittedAt,
+    generatedAt: new Date(),
+  };
+}
+
+// ─── App Router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
+
+  // ─── OAuth auth (legacy, required by core) ────────────────────────────────
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
+      return { success: true } as const;
     }),
   }),
 
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+  // ─── Platform Auth ────────────────────────────────────────────────────────
+  platform: router({
+    login: publicProcedure
+      .input(z.object({ username: z.string(), password: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const user = await getPlatformUserByUsername(input.username.trim());
+        if (!user || !user.isActive)
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid username or password" });
+        const hash = hashPassword(input.password);
+        if (hash !== user.passwordHash)
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid username or password" });
+        const token = await signPlatformToken(user.id, user.role);
+        const isSecure = ctx.req.protocol === "https" || ctx.req.headers["x-forwarded-proto"] === "https";
+        ctx.res.cookie(PLATFORM_COOKIE, token, {
+          httpOnly: true,
+          secure: isSecure,
+          sameSite: isSecure ? "none" : "lax",
+          maxAge: 8 * 60 * 60 * 1000,
+          path: "/",
+        });
+        return {
+          id: user.id,
+          username: user.username,
+          name: user.name,
+          role: user.role,
+          email: user.email,
+        };
+      }),
+
+    logout: publicProcedure.mutation(({ ctx }) => {
+      ctx.res.clearCookie(PLATFORM_COOKIE, { path: "/" });
+      return { success: true };
+    }),
+
+    me: publicProcedure.query(async ({ ctx }) => {
+      const token = ctx.req.cookies?.[PLATFORM_COOKIE];
+      if (!token) return null;
+      const payload = await verifyPlatformToken(token);
+      if (!payload?.sub) return null;
+      const user = await getPlatformUserById(Number(payload.sub));
+      if (!user || !user.isActive) return null;
+      return {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        role: user.role,
+        email: user.email,
+      };
+    }),
+  }),
+
+  // ─── Admin: User Management ───────────────────────────────────────────────
+  admin: router({
+    listUsers: adminProcedure.query(async () => {
+      const all = await getAllPlatformUsers();
+      return all.map((u) => ({
+        id: u.id,
+        username: u.username,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        isActive: u.isActive,
+        createdAt: u.createdAt,
+      }));
+    }),
+
+    createUser: adminProcedure
+      .input(
+        z.object({
+          username: z.string().min(3),
+          password: z.string().min(6),
+          name: z.string().min(1),
+          email: z.string().email().optional(),
+          role: z.enum(["admin", "teacher", "student"]),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const existing = await getPlatformUserByUsername(input.username);
+        if (existing) throw new TRPCError({ code: "CONFLICT", message: "Username already exists" });
+        await createPlatformUser({
+          username: input.username,
+          passwordHash: hashPassword(input.password),
+          name: input.name,
+          email: input.email,
+          role: input.role,
+        });
+        return { success: true };
+      }),
+
+    updateUser: adminProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          name: z.string().min(1).optional(),
+          email: z.string().email().optional().nullable(),
+          password: z.string().min(6).optional(),
+          isActive: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, password, ...rest } = input;
+        const data: { name?: string; email?: string | null; isActive?: boolean; passwordHash?: string } = rest;
+        if (password) data.passwordHash = hashPassword(password);
+        await updatePlatformUser(id, data);
+        return { success: true };
+      }),
+
+    deleteUser: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deletePlatformUser(input.id);
+        return { success: true };
+      }),
+
+    // Classes
+    listClasses: adminProcedure.query(async () => {
+      const cls = await getAllClasses();
+      const result = [];
+      for (const c of cls) {
+        const students = await getStudentsInClass(c.id);
+        let teacher = null;
+        if (c.teacherId) teacher = await getPlatformUserById(c.teacherId);
+        result.push({ ...c, studentCount: students.length, teacherName: teacher?.name ?? null });
+      }
+      return result;
+    }),
+
+    createClass: adminProcedure
+      .input(z.object({ name: z.string().min(1), grade: z.string().optional(), teacherId: z.number().optional() }))
+      .mutation(async ({ input }) => {
+        await createClass(input);
+        return { success: true };
+      }),
+
+    updateClass: adminProcedure
+      .input(z.object({ id: z.number(), name: z.string().optional(), teacherId: z.number().nullable().optional() }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateClass(id, data);
+        return { success: true };
+      }),
+
+    deleteClass: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteClass(input.id);
+        return { success: true };
+      }),
+
+    enrollStudent: adminProcedure
+      .input(z.object({ studentId: z.number(), classId: z.number() }))
+      .mutation(async ({ input }) => {
+        await enrollStudentInClass(input.studentId, input.classId);
+        return { success: true };
+      }),
+
+    removeStudentFromClass: adminProcedure
+      .input(z.object({ studentId: z.number(), classId: z.number() }))
+      .mutation(async ({ input }) => {
+        await removeStudentFromClass(input.studentId, input.classId);
+        return { success: true };
+      }),
+
+    getClassStudents: adminProcedure
+      .input(z.object({ classId: z.number() }))
+      .query(async ({ input }) => {
+        return getStudentsInClass(input.classId);
+      }),
+
+    // Question Bank
+    listQuestions: adminProcedure.query(async () => getAllQuestions()),
+
+    createQuestion: adminProcedure
+      .input(
+        z.object({
+          subject: z.enum(["Math", "Science"]),
+          contentDomain: z.string().min(1),
+          cognitiveDomain: z.enum(["Knowing", "Applying", "Reasoning"]),
+          difficulty: z.enum(["Easy", "Medium", "Hard"]),
+          questionType: z.enum(["multiple_choice", "short_answer"]),
+          questionText: z.string().min(1),
+          options: z.array(z.object({ id: z.string(), text: z.string() })).optional(),
+          correctAnswer: z.string().min(1),
+          explanation: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await createQuestion({ ...input, options: input.options ?? null });
+        return { success: true };
+      }),
+
+    updateQuestion: adminProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          subject: z.enum(["Math", "Science"]).optional(),
+          contentDomain: z.string().optional(),
+          cognitiveDomain: z.enum(["Knowing", "Applying", "Reasoning"]).optional(),
+          difficulty: z.enum(["Easy", "Medium", "Hard"]).optional(),
+          questionType: z.enum(["multiple_choice", "short_answer"]).optional(),
+          questionText: z.string().optional(),
+          options: z.array(z.object({ id: z.string(), text: z.string() })).optional().nullable(),
+          correctAnswer: z.string().optional(),
+          explanation: z.string().optional().nullable(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateQuestion(id, data);
+        return { success: true };
+      }),
+
+    deleteQuestion: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteQuestion(input.id);
+        return { success: true };
+      }),
+
+    // Exams
+    listExams: adminProcedure.query(async () => getAllExams()),
+
+    createExam: adminProcedure
+      .input(z.object({ name: z.string().min(1), description: z.string().optional(), durationMinutes: z.number().optional() }))
+      .mutation(async ({ input }) => {
+        await createExam(input);
+        return { success: true };
+      }),
+
+    updateExam: adminProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          name: z.string().optional(),
+          description: z.string().optional().nullable(),
+          durationMinutes: z.number().optional(),
+          isPublished: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateExam(id, data);
+        return { success: true };
+      }),
+
+    getExamWithQuestions: adminProcedure
+      .input(z.object({ examId: z.number() }))
+      .query(async ({ input }) => getExamWithQuestions(input.examId)),
+
+    setExamQuestions: adminProcedure
+      .input(z.object({ examId: z.number(), questionIds: z.array(z.number()) }))
+      .mutation(async ({ input }) => {
+        await setExamQuestions(input.examId, input.questionIds);
+        return { success: true };
+      }),
+
+    // Assign exam to class
+    assignExamToClass: adminProcedure
+      .input(z.object({ classId: z.number(), examId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await assignExamToClass(input.classId, input.examId, ctx.platformUser.id);
+        return { success: true };
+      }),
+
+    deactivateExamForClass: adminProcedure
+      .input(z.object({ classId: z.number(), examId: z.number() }))
+      .mutation(async ({ input }) => {
+        await deactivateExamForClass(input.classId, input.examId);
+        return { success: true };
+      }),
+  }),
+
+  // ─── Teacher ──────────────────────────────────────────────────────────────
+  teacher: router({
+    myClasses: teacherOrAdminProcedure.query(async ({ ctx }) => {
+      const all = await getAllClasses();
+      return all.filter((c) => c.teacherId === ctx.platformUser.id);
+    }),
+
+    classStudents: teacherOrAdminProcedure
+      .input(z.object({ classId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const cls = await getClassById(input.classId);
+        if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
+        return getStudentsInClass(input.classId);
+      }),
+
+    classExams: teacherOrAdminProcedure
+      .input(z.object({ classId: z.number() }))
+      .query(async ({ input }) => {
+        const assignments = await getClassExamAssignments(input.classId);
+        const result = [];
+        for (const a of assignments) {
+          const exam = await getExamById(a.examId);
+          if (exam) result.push({ ...a, examName: exam.name, examDuration: exam.durationMinutes });
+        }
+        return result;
+      }),
+
+    activateExam: teacherOrAdminProcedure
+      .input(z.object({ classId: z.number(), examId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const cls = await getClassById(input.classId);
+        if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
+        await assignExamToClass(input.classId, input.examId, ctx.platformUser.id);
+        return { success: true };
+      }),
+
+    deactivateExam: teacherOrAdminProcedure
+      .input(z.object({ classId: z.number(), examId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const cls = await getClassById(input.classId);
+        if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
+        await deactivateExamForClass(input.classId, input.examId);
+        return { success: true };
+      }),
+
+    listAllExams: teacherOrAdminProcedure.query(async () => getAllExams()),
+
+    classProgress: teacherOrAdminProcedure
+      .input(z.object({ classId: z.number(), examId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const cls = await getClassById(input.classId);
+        if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
+        const attempts = await getAttemptsByExamAndClass(input.examId, input.classId);
+        const result = [];
+        for (const a of attempts) {
+          const student = await getPlatformUserById(a.studentId);
+          result.push({
+            ...a,
+            studentName: student?.name ?? "Unknown",
+            percentage:
+              a.totalQuestions && a.totalQuestions > 0
+                ? Math.round(((a.totalScore ?? 0) / a.totalQuestions) * 100)
+                : null,
+          });
+        }
+        return result;
+      }),
+
+    getStudentReport: teacherOrAdminProcedure
+      .input(z.object({ attemptId: z.number() }))
+      .query(async ({ input }) => {
+        return getReportByAttemptId(input.attemptId);
+      }),
+
+    getClassReports: teacherOrAdminProcedure
+      .input(z.object({ classId: z.number() }))
+      .query(async ({ input }) => {
+        return getReportsByClass(input.classId);
+      }),
+  }),
+
+  // ─── Student ──────────────────────────────────────────────────────────────
+  student: router({
+    availableExams: platformProcedure.query(async ({ ctx }) => {
+      const studentClasses = await getClassesForStudent(ctx.platformUser.id);
+      const result = [];
+      for (const cls of studentClasses) {
+        const assignments = await getClassExamAssignments(cls.id);
+        for (const a of assignments) {
+          if (!a.isActive) continue;
+          const exam = await getExamById(a.examId);
+          if (!exam) continue;
+          const attempts = await getAttemptsByStudent(ctx.platformUser.id);
+          const attempt = attempts.find((at) => at.examId === exam.id && at.classId === cls.id);
+          result.push({
+            exam,
+            className: cls.name,
+            classId: cls.id,
+            attemptStatus: attempt?.status ?? null,
+            attemptId: attempt?.id ?? null,
+          });
+        }
+      }
+      return result;
+    }),
+
+    startExam: platformProcedure
+      .input(z.object({ examId: z.number(), classId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        // Verify exam is active for this class
+        const assignments = await getClassExamAssignments(input.classId);
+        const active = assignments.find((a) => a.examId === input.examId && a.isActive);
+        if (!active) throw new TRPCError({ code: "FORBIDDEN", message: "Exam is not active" });
+
+        const attempt = await getOrCreateAttempt(ctx.platformUser.id, input.examId, input.classId);
+        if (attempt.status === "submitted")
+          throw new TRPCError({ code: "FORBIDDEN", message: "Exam already submitted" });
+
+        const examData = await getExamWithQuestions(input.examId);
+        if (!examData) throw new TRPCError({ code: "NOT_FOUND" });
+
+        // Return questions WITHOUT correct answers
+        const safeQuestions = (examData.questions as Array<{
+          id: number;
+          subject: string;
+          contentDomain: string;
+          cognitiveDomain: string;
+          difficulty: string;
+          questionType: string;
+          questionText: string;
+          options: unknown;
+          imageUrl: string | null;
+        }>).map((q) => ({
+          id: q.id,
+          subject: q.subject,
+          contentDomain: q.contentDomain,
+          cognitiveDomain: q.cognitiveDomain,
+          difficulty: q.difficulty,
+          questionType: q.questionType,
+          questionText: q.questionText,
+          options: q.options,
+          imageUrl: q.imageUrl,
+        }));
+
+        const existingAnswers = await getAnswersForAttempt(attempt.id);
+        return {
+          attemptId: attempt.id,
+          examName: examData.name,
+          durationMinutes: examData.durationMinutes,
+          questions: safeQuestions,
+          savedAnswers: existingAnswers.map((a) => ({
+            questionId: a.questionId,
+            answerGiven: a.answerGiven,
+            isFlagged: a.isFlagged,
+          })),
+          startedAt: attempt.startedAt,
+        };
+      }),
+
+    saveAnswer: platformProcedure
+      .input(
+        z.object({
+          attemptId: z.number(),
+          questionId: z.number(),
+          answerGiven: z.string().nullable(),
+          isFlagged: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const attempt = await getAttemptById(input.attemptId);
+        if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
+        if (attempt.studentId !== ctx.platformUser.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
+        if (attempt.status === "submitted")
+          throw new TRPCError({ code: "FORBIDDEN", message: "Exam already submitted" });
+        await saveStudentAnswer({
+          attemptId: input.attemptId,
+          questionId: input.questionId,
+          answerGiven: input.answerGiven,
+          isFlagged: input.isFlagged ?? false,
+        });
+        return { success: true };
+      }),
+
+    submitExam: platformProcedure
+      .input(z.object({ attemptId: z.number(), timeSpentSeconds: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const attempt = await getAttemptById(input.attemptId);
+        if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
+        if (attempt.studentId !== ctx.platformUser.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
+        if (attempt.status === "submitted")
+          return { success: true, message: "Already submitted" };
+
+        const examData = await getExamWithQuestions(attempt.examId);
+        if (!examData) throw new TRPCError({ code: "NOT_FOUND" });
+
+        const answers = await getAnswersForAttempt(input.attemptId);
+        const questionsList = examData.questions as Array<{
+          id: number;
+          subject: string;
+          contentDomain: string;
+          cognitiveDomain: string;
+          difficulty: string;
+          questionType: string;
+          correctAnswer: string;
+        }>;
+
+        // Score answers
+        let totalScore = 0;
+        let mathScore = 0;
+        let mathTotal = 0;
+        let scienceScore = 0;
+        let scienceTotal = 0;
+        const contentDomainBreakdown: Record<string, { correct: number; total: number }> = {};
+        const cognitiveDomainBreakdown: Record<string, { correct: number; total: number }> = {};
+
+        const scoredAnswers: Array<{ questionId: number; answerGiven: string | null; isCorrect: boolean | null }> = [];
+
+        for (const q of questionsList) {
+          const ans = answers.find((a) => a.questionId === q.id);
+          const answerGiven = ans?.answerGiven ?? null;
+
+          let isCorrect: boolean | null = null;
+          if (q.questionType === "multiple_choice") {
+            isCorrect = answerGiven?.trim().toUpperCase() === q.correctAnswer.trim().toUpperCase();
+          } else {
+            // Short answer: partial credit - mark as null for manual review, but auto-check simple matches
+            const given = answerGiven?.trim().toLowerCase() ?? "";
+            const correct = q.correctAnswer.trim().toLowerCase();
+            isCorrect = given === correct || correct.includes(given) && given.length > 3;
+          }
+
+          if (isCorrect) totalScore++;
+
+          if (q.subject === "Math") {
+            mathTotal++;
+            if (isCorrect) mathScore++;
+          } else {
+            scienceTotal++;
+            if (isCorrect) scienceScore++;
+          }
+
+          if (!contentDomainBreakdown[q.contentDomain])
+            contentDomainBreakdown[q.contentDomain] = { correct: 0, total: 0 };
+          contentDomainBreakdown[q.contentDomain].total++;
+          if (isCorrect) contentDomainBreakdown[q.contentDomain].correct++;
+
+          if (!cognitiveDomainBreakdown[q.cognitiveDomain])
+            cognitiveDomainBreakdown[q.cognitiveDomain] = { correct: 0, total: 0 };
+          cognitiveDomainBreakdown[q.cognitiveDomain].total++;
+          if (isCorrect) cognitiveDomainBreakdown[q.cognitiveDomain].correct++;
+
+          // Update answer with isCorrect
+          if (ans) {
+            await saveStudentAnswer({
+              attemptId: input.attemptId,
+              questionId: q.id,
+              answerGiven: answerGiven,
+              isFlagged: ans.isFlagged,
+            });
+          }
+          scoredAnswers.push({ questionId: q.id, answerGiven, isCorrect });
+        }
+
+        await submitAttempt(input.attemptId, {
+          totalScore,
+          totalQuestions: questionsList.length,
+          mathScore,
+          mathTotal,
+          scienceScore,
+          scienceTotal,
+          domainBreakdown: { contentDomain: contentDomainBreakdown, cognitiveDomain: cognitiveDomainBreakdown },
+          timeSpentSeconds: input.timeSpentSeconds,
+        });
+
+        // Generate report
+        const student = await getPlatformUserById(ctx.platformUser.id);
+        const exam = await getExamById(attempt.examId);
+        const cls = await getClassById(attempt.classId);
+        if (student && exam && cls) {
+          const updatedAttempt = await getAttemptById(input.attemptId);
+          const reportData = generateReportData(
+            { id: student.id, name: student.name },
+            { id: exam.id, name: exam.name },
+            cls.name,
+            {
+              totalScore,
+              totalQuestions: questionsList.length,
+              mathScore,
+              mathTotal,
+              scienceScore,
+              scienceTotal,
+              domainBreakdown: { contentDomain: contentDomainBreakdown, cognitiveDomain: cognitiveDomainBreakdown },
+              timeSpentSeconds: input.timeSpentSeconds,
+              submittedAt: new Date(),
+            },
+            scoredAnswers,
+            questionsList
+          );
+          await saveStudentReport({
+            attemptId: input.attemptId,
+            studentId: ctx.platformUser.id,
+            examId: attempt.examId,
+            classId: attempt.classId,
+            reportData,
+          });
+        }
+
+        return { success: true };
+      }),
+
+    myAttempts: platformProcedure.query(async ({ ctx }) => {
+      return getAttemptsByStudent(ctx.platformUser.id);
+    }),
+
+    myReports: platformProcedure.query(async ({ ctx }) => {
+      return getReportsByStudent(ctx.platformUser.id);
+    }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
