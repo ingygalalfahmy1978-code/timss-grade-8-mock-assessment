@@ -1,5 +1,6 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
+import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import { Download } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -19,7 +20,9 @@ type ReportData = {
 };
 
 export default function TeacherReports() {
-  const { data: rawClasses } = trpc.teacher.myClasses.useQuery();
+  const { user } = usePlatformAuth();
+  const isAuth = !!user;
+  const { data: rawClasses } = trpc.teacher.myClasses.useQuery(undefined, { enabled: isAuth });
   const classes = (rawClasses as Array<{ id: number; name: string }> | undefined) ?? [];
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
 

@@ -1,5 +1,6 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
+import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import { Edit2, Plus, Trash2, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -28,8 +29,10 @@ function generatePassword(): string {
 
 export default function AdminStudents() {
   const utils = trpc.useUtils();
-  const { data: users, isLoading } = trpc.admin.listUsers.useQuery();
-  const { data: classes } = trpc.admin.listClasses.useQuery();
+  const { user } = usePlatformAuth();
+  const isAuth = !!user;
+  const { data: users, isLoading } = trpc.admin.listUsers.useQuery(undefined, { enabled: isAuth });
+  const { data: classes } = trpc.admin.listClasses.useQuery(undefined, { enabled: isAuth });
   const createUser = trpc.admin.createUser.useMutation({ onSuccess: () => utils.admin.listUsers.invalidate() });
   const updateUser = trpc.admin.updateUser.useMutation({ onSuccess: () => utils.admin.listUsers.invalidate() });
   const deleteUser = trpc.admin.deleteUser.useMutation({ onSuccess: () => utils.admin.listUsers.invalidate() });

@@ -6,9 +6,10 @@ import { Link } from "wouter";
 
 export default function TeacherDashboard() {
   const { user } = usePlatformAuth();
-  const { data: rawClasses } = trpc.teacher.myClasses.useQuery();
+  const isAuth = !!user;
+  const { data: rawClasses } = trpc.teacher.myClasses.useQuery(undefined, { enabled: isAuth });
   const classes = rawClasses as Array<{ id: number; name: string; grade: string; teacherId: number | null; studentCount?: number }> | undefined;
-  const { data: allExams } = trpc.teacher.listAllExams.useQuery();
+  const { data: allExams } = trpc.teacher.listAllExams.useQuery(undefined, { enabled: isAuth });
 
   return (
     <PlatformLayout title="Teacher Dashboard">

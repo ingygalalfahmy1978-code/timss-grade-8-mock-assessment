@@ -1,13 +1,16 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
+import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import { BookOpen, ClipboardList, GraduationCap, Users } from "lucide-react";
 import { Link } from "wouter";
 
 export default function AdminDashboard() {
-  const { data: users } = trpc.admin.listUsers.useQuery();
-  const { data: classes } = trpc.admin.listClasses.useQuery();
-  const { data: questions } = trpc.admin.listQuestions.useQuery();
-  const { data: exams } = trpc.admin.listExams.useQuery();
+  const { user } = usePlatformAuth();
+  const isAuth = !!user;
+  const { data: users } = trpc.admin.listUsers.useQuery(undefined, { enabled: isAuth });
+  const { data: classes } = trpc.admin.listClasses.useQuery(undefined, { enabled: isAuth });
+  const { data: questions } = trpc.admin.listQuestions.useQuery(undefined, { enabled: isAuth });
+  const { data: exams } = trpc.admin.listExams.useQuery(undefined, { enabled: isAuth });
 
   const students = users?.filter((u) => u.role === "student") ?? [];
   const teachers = users?.filter((u) => u.role === "teacher") ?? [];

@@ -1,5 +1,6 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
+import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import { Edit2, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -39,8 +40,10 @@ const defaultForm: QuestionForm = {
 };
 
 export default function AdminQuestions() {
+  const { user } = usePlatformAuth();
+  const isAuth = !!user;
   const utils = trpc.useUtils();
-  const { data: questions, isLoading } = trpc.admin.listQuestions.useQuery();
+  const { data: questions, isLoading } = trpc.admin.listQuestions.useQuery(undefined, { enabled: isAuth });
   const createQ = trpc.admin.createQuestion.useMutation({ onSuccess: () => utils.admin.listQuestions.invalidate() });
   const updateQ = trpc.admin.updateQuestion.useMutation({ onSuccess: () => utils.admin.listQuestions.invalidate() });
   const deleteQ = trpc.admin.deleteQuestion.useMutation({ onSuccess: () => utils.admin.listQuestions.invalidate() });

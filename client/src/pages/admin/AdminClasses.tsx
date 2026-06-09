@@ -1,14 +1,17 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
+import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import { Plus, Trash2, Users } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 export default function AdminClasses() {
+  const { user } = usePlatformAuth();
+  const isAuth = !!user;
   const utils = trpc.useUtils();
-  const { data: classes, isLoading } = trpc.admin.listClasses.useQuery();
-  const { data: users } = trpc.admin.listUsers.useQuery();
-  const { data: exams } = trpc.admin.listExams.useQuery();
+  const { data: classes, isLoading } = trpc.admin.listClasses.useQuery(undefined, { enabled: isAuth });
+  const { data: users } = trpc.admin.listUsers.useQuery(undefined, { enabled: isAuth });
+  const { data: exams } = trpc.admin.listExams.useQuery(undefined, { enabled: isAuth });
   const createClass = trpc.admin.createClass.useMutation({ onSuccess: () => utils.admin.listClasses.invalidate() });
   const updateClass = trpc.admin.updateClass.useMutation({ onSuccess: () => utils.admin.listClasses.invalidate() });
   const deleteClass = trpc.admin.deleteClass.useMutation({ onSuccess: () => utils.admin.listClasses.invalidate() });

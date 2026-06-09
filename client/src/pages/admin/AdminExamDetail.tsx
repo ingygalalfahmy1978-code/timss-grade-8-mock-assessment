@@ -1,17 +1,20 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
+import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "wouter";
 import { toast } from "sonner";
 
 export default function AdminExamDetail() {
+  const { user } = usePlatformAuth();
+  const isAuth = !!user;
   const { id } = useParams<{ id: string }>();
   const examId = Number(id);
   const utils = trpc.useUtils();
 
   const { data: exam } = trpc.admin.getExamWithQuestions.useQuery({ examId });
-  const { data: allQuestions } = trpc.admin.listQuestions.useQuery();
+  const { data: allQuestions } = trpc.admin.listQuestions.useQuery(undefined, { enabled: isAuth });
   const setExamQuestions = trpc.admin.setExamQuestions.useMutation({ onSuccess: () => utils.admin.getExamWithQuestions.invalidate() });
   const updateExam = trpc.admin.updateExam.useMutation({ onSuccess: () => utils.admin.getExamWithQuestions.invalidate() });
 

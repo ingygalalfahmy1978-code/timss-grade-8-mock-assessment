@@ -1,13 +1,16 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
+import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import { BookOpen, ChevronRight, Edit2, Plus } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 
 export default function AdminExams() {
+  const { user } = usePlatformAuth();
+  const isAuth = !!user;
   const utils = trpc.useUtils();
-  const { data: exams, isLoading } = trpc.admin.listExams.useQuery();
+  const { data: exams, isLoading } = trpc.admin.listExams.useQuery(undefined, { enabled: isAuth });
   const createExam = trpc.admin.createExam.useMutation({ onSuccess: () => utils.admin.listExams.invalidate() });
   const updateExam = trpc.admin.updateExam.useMutation({ onSuccess: () => utils.admin.listExams.invalidate() });
 

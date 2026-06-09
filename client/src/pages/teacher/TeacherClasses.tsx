@@ -1,5 +1,6 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
+import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import { useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -8,10 +9,12 @@ import { ChevronRight, Play, Square, Users } from "lucide-react";
 type ClassItem = { id: number; name: string; grade: string; teacherId: number | null; studentCount?: number };
 
 export default function TeacherClasses() {
+  const { user } = usePlatformAuth();
+  const isAuth = !!user;
   const utils = trpc.useUtils();
-  const { data: rawClasses } = trpc.teacher.myClasses.useQuery();
+  const { data: rawClasses } = trpc.teacher.myClasses.useQuery(undefined, { enabled: isAuth });
   const classes = (rawClasses as ClassItem[] | undefined) ?? [];
-  const { data: allExams } = trpc.teacher.listAllExams.useQuery();
+  const { data: allExams } = trpc.teacher.listAllExams.useQuery(undefined, { enabled: isAuth });
   const activateExam = trpc.teacher.activateExam.useMutation({ onSuccess: () => utils.teacher.classExams.invalidate() });
   const deactivateExam = trpc.teacher.deactivateExam.useMutation({ onSuccess: () => utils.teacher.classExams.invalidate() });
 
