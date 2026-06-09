@@ -545,8 +545,13 @@ export default function ExamInterface() {
 
   const questions = examData.questions;
   const currentQ = questions[currentIndex];
-  const options = currentQ?.options as MCOption[] | null;
-  const interactiveData = currentQ?.interactiveData as InteractiveData | null;
+  // Parse options and interactiveData — they may arrive as JSON strings from the DB
+  const options: MCOption[] | null = currentQ?.options
+    ? (typeof currentQ.options === "string" ? parseJson<MCOption[]>(currentQ.options, []) : currentQ.options as MCOption[])
+    : null;
+  const interactiveData: InteractiveData | null = currentQ?.interactiveData
+    ? (typeof currentQ.interactiveData === "string" ? parseJson<InteractiveData>(currentQ.interactiveData, null as unknown as InteractiveData) : currentQ.interactiveData as InteractiveData)
+    : null;
   const answeredCount = Object.keys(answers).filter(k => {
     const v = answers[Number(k)];
     return v !== undefined && v !== "" && v !== "{}" && v !== "[]";
