@@ -1,6 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
+import { useEffect } from "react";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -30,6 +31,21 @@ import ExamInstructions from "./pages/student/ExamInstructions";
 import ExamInterface from "./pages/student/ExamInterface";
 import ExamComplete from "./pages/student/ExamComplete";
 
+const Spinner = () => (
+  <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="animate-spin w-8 h-8 border-2 border-[oklch(0.42_0.14_240)] border-t-transparent rounded-full" />
+  </div>
+);
+
+// Safe redirect component — uses useEffect to avoid setState-during-render
+function Redirect({ to }: { to: string }) {
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    navigate(to);
+  }, [to, navigate]);
+  return <Spinner />;
+}
+
 function ProtectedRoute({
   component: Component,
   allowedRoles,
@@ -38,56 +54,38 @@ function ProtectedRoute({
   allowedRoles: string[];
 }) {
   const { user, isLoading } = usePlatformAuth();
-  const [, navigate] = useLocation();
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin w-8 h-8 border-2 border-[oklch(0.42_0.14_240)] border-t-transparent rounded-full" />
-      </div>
-    );
-  }
+  if (isLoading) return <Spinner />;
 
-  if (!user) {
-    navigate("/login");
-    return null;
-  }
+  if (!user) return <Redirect to="/login" />;
 
   if (!allowedRoles.includes(user.role)) {
-    // Redirect to appropriate dashboard
-    if (user.role === "admin") navigate("/admin");
-    else if (user.role === "teacher") navigate("/teacher");
-    else navigate("/student");
-    return null;
+    if (user.role === "admin") return <Redirect to="/admin" />;
+    if (user.role === "teacher") return <Redirect to="/teacher" />;
+    return <Redirect to="/student" />;
   }
 
   return <Component />;
 }
 
-function Router() {
+function RootRedirect() {
   const { user, isLoading } = usePlatformAuth();
-  const [, navigate] = useLocation();
 
+  if (isLoading) return <Spinner />;
+  if (!user) return <Redirect to="/login" />;
+  if (user.role === "admin") return <Redirect to="/admin" />;
+  if (user.role === "teacher") return <Redirect to="/teacher" />;
+  return <Redirect to="/student" />;
+}
+
+function Router() {
   return (
     <Switch>
       {/* Public */}
       <Route path="/login" component={Login} />
 
       {/* Root redirect */}
-      <Route path="/">
-        {() => {
-          if (isLoading) return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50">
-              <div className="animate-spin w-8 h-8 border-2 border-[oklch(0.42_0.14_240)] border-t-transparent rounded-full" />
-            </div>
-          );
-          if (!user) return <Login />;
-          if (user.role === "admin") { navigate("/admin"); return null; }
-          if (user.role === "teacher") { navigate("/teacher"); return null; }
-          navigate("/student");
-          return null;
-        }}
-      </Route>
+      <Route path="/" component={RootRedirect} />
 
       {/* Admin routes */}
       <Route path="/admin">
