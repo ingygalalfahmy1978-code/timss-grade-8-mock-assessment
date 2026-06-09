@@ -50,3 +50,15 @@
 - [x] Accessible typography (readable fonts, high contrast)
 - [x] Responsive design
 - [x] Write vitest tests (16 tests passing)
+
+## Phase 8: TIMSS 2027 Enhanced Exam Interface
+- [x] Extended question type enum: drag_drop, matching, ordering
+- [x] Drag-and-drop question renderer (with HTML5 DnD API)
+- [x] Matching question renderer (column A to column B)
+- [x] Ordering/sequencing question renderer
+- [x] On-screen scientific calculator (toggle button in exam toolbar)
+- [x] 52 TIMSS 2027-aligned questions seeded across all 6 exams
+- [x] Questions cover all 8 content domains (Math + Science)
+- [x] Questions cover all 3 cognitive domains (Knowing, Applying, Reasoning)
+- [x] Mock 1: 30 questions (18 MC, 6 SA, 2 ordering, 2 drag-drop, 2 matching)
+- [x] Mocks 2-6: populated with question subsets from the full bank

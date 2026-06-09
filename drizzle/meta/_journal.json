@@ -15,6 +15,13 @@
       "when": 1780979255810,
       "tag": "0001_dark_black_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1781004139059,
+      "tag": "0002_living_stark_industries",
+      "breakpoints": true
     }
   ]
 }

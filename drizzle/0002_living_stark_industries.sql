@@ -1,0 +1,2 @@
+ALTER TABLE `questions` MODIFY COLUMN `question_type` enum('multiple_choice','short_answer','drag_drop','matching','ordering','hotspot') NOT NULL;--> statement-breakpoint
+ALTER TABLE `questions` ADD `interactive_data` json;

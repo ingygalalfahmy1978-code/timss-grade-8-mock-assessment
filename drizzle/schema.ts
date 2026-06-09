@@ -68,7 +68,16 @@ export const questions = mysqlTable("questions", {
   questionType: mysqlEnum("question_type", [
     "multiple_choice",
     "short_answer",
+    "drag_drop",
+    "matching",
+    "ordering",
+    "hotspot",
   ]).notNull(),
+  // For drag_drop: JSON { items: [{id,text}], targets: [{id,label}], correctMapping: {itemId: targetId} }
+  // For matching: JSON { leftItems: [{id,text}], rightItems: [{id,text}], correctPairs: {leftId: rightId} }
+  // For ordering: JSON { items: [{id,text}], correctOrder: [id,...] }
+  // For hotspot: JSON { imageUrl, regions: [{id,x,y,w,h,label}], correctRegion: id }
+  interactiveData: json("interactive_data"),
   questionText: text("question_text").notNull(),
   // For multiple choice: JSON array of {id, text} objects
   options: json("options"),
