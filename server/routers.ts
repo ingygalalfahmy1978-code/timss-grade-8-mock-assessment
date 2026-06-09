@@ -612,8 +612,19 @@ export const appRouter = router({
         if (!active) throw new TRPCError({ code: "FORBIDDEN", message: "Exam is not active" });
 
         const attempt = await getOrCreateAttempt(ctx.platformUser.id, input.examId, input.classId);
-        if (attempt.status === "submitted")
-          throw new TRPCError({ code: "FORBIDDEN", message: "Exam already submitted" });
+        if (attempt.status === "submitted") {
+          // Return a special flag so the client can redirect to the completion page
+          const examData = await getExamWithQuestions(input.examId);
+          return {
+            attemptId: attempt.id,
+            examName: examData?.name ?? "Assessment",
+            durationMinutes: examData?.durationMinutes ?? 90,
+            questions: [],
+            savedAnswers: [],
+            startedAt: attempt.startedAt,
+            alreadySubmitted: true,
+          };
+        }
 
         const examData = await getExamWithQuestions(input.examId);
         if (!examData) throw new TRPCError({ code: "NOT_FOUND" });
@@ -629,6 +640,7 @@ export const appRouter = router({
           questionText: string;
           options: unknown;
           imageUrl: string | null;
+          interactiveData: unknown;
         }>).map((q) => ({
           id: q.id,
           subject: q.subject,
@@ -639,6 +651,7 @@ export const appRouter = router({
           questionText: q.questionText,
           options: q.options,
           imageUrl: q.imageUrl,
+          interactiveData: q.interactiveData ?? null,
         }));
 
         const existingAnswers = await getAnswersForAttempt(attempt.id);

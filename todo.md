@@ -62,3 +62,10 @@
 - [x] Questions cover all 3 cognitive domains (Knowing, Applying, Reasoning)
 - [x] Mock 1: 30 questions (18 MC, 6 SA, 2 ordering, 2 drag-drop, 2 matching)
 - [x] Mocks 2-6: populated with question subsets from the full bank
+
+## Phase 9: Bug Fixes
+- [x] Fix student dashboard loading bug: retry loop from wrong unauthorized error detection
+  - Fixed main.tsx: changed error detection from message comparison to error.data?.code === 'UNAUTHORIZED'
+  - Fixed StudentDashboard.tsx: added isError handling, explicit error state UI, retry:false
+  - Fixed ExamInstructions.tsx: added retry:false to availableExams query
+  - Set QueryClient default retry:false to prevent infinite retry loops globally

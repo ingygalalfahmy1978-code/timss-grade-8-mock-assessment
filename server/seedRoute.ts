@@ -1,8 +1,31 @@
 import { Router } from "express";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "./db";
-import { questions, exams, examQuestions } from "../drizzle/schema";
+import { questions, exams, examQuestions, studentExamAttempts, studentAnswers, studentReports } from "../drizzle/schema";
 
 export function registerSeedRoute(app: Router) {
+  // Dev helper: reset a student's exam attempt so they can retake it
+  app.post("/api/reset-attempt", async (req, res) => {
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB not available" });
+      const { studentId, examId } = req.body as { studentId?: number; examId?: number };
+      if (!studentId) return res.status(400).json({ error: "studentId required" });
+      const whereClause = examId
+        ? and(eq(studentExamAttempts.studentId, studentId), eq(studentExamAttempts.examId, examId))
+        : eq(studentExamAttempts.studentId, studentId);
+      const attempts = await db.select().from(studentExamAttempts).where(whereClause);
+      for (const a of attempts) {
+        await db.delete(studentAnswers).where(eq(studentAnswers.attemptId, a.id));
+        await db.delete(studentReports).where(eq(studentReports.attemptId, a.id));
+        await db.delete(studentExamAttempts).where(eq(studentExamAttempts.id, a.id));
+      }
+      return res.json({ success: true, deleted: attempts.length });
+    } catch (e) {
+      return res.status(500).json({ error: String(e) });
+    }
+  });
+
   app.post("/api/seed-questions", async (req, res) => {
     try {
       const db = await getDb();

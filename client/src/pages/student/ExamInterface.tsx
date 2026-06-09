@@ -410,11 +410,19 @@ export default function ExamInterface() {
   const startExam = trpc.student.startExam.useMutation();
   const saveAnswer = trpc.student.saveAnswer.useMutation();
   const submitExam = trpc.student.submitExam.useMutation();
-
+  // Guard ref prevents double-fire in React StrictMode
+  const loadedRef = useRef(false);
   // Load exam on mount
   useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
     startExam.mutateAsync({ examId: Number(examId), classId: Number(classId) })
       .then((data) => {
+        // If already submitted, redirect to completion page
+        if ((data as { alreadySubmitted?: boolean }).alreadySubmitted) {
+          navigate(`/student/exam/${examId}/${classId}/complete`);
+          return;
+        }
         setExamData(data as ExamData);
         const savedMap: Record<number, string> = {};
         const savedFlags = new Set<number>();

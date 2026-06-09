@@ -1,5 +1,4 @@
 import { trpc } from "@/lib/trpc";
-import { UNAUTHED_ERR_MSG } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -8,15 +7,40 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Prevent infinite retry loops on auth errors
+      retry: false,
+    },
+  },
+});
 
-const redirectToLoginIfUnauthorized = (error: unknown) => {
+const redirectToLoginIfUnauthorized = (error: unknown, queryKey?: readonly unknown[]) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
 
-  const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
+  // Use error.data?.code (tRPC standard) instead of message comparison
+  const isUnauthorized =
+    (error.data as any)?.code === "UNAUTHORIZED" ||
+    error.message === "Not authenticated" ||
+    error.message === "Invalid session" ||
+    error.message === "User not found" ||
+    error.message === "Please login (10001)";
 
   if (!isUnauthorized) return;
+
+  // Don't redirect for auth-check queries (platform.me, platform.login, etc.)
+  // These are expected to return unauthorized when not logged in
+  const keyStr = JSON.stringify(queryKey ?? []);
+  const isAuthQuery =
+    keyStr.includes("platform.me") ||
+    keyStr.includes("platform.login") ||
+    keyStr.includes("auth.me");
+  if (isAuthQuery) return;
+
+  // Only redirect if we're not already on the login page
+  if (window.location.pathname === "/login") return;
 
   window.location.href = getLoginUrl();
 };
@@ -24,7 +48,8 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
-    redirectToLoginIfUnauthorized(error);
+    const queryKey = event.query.queryKey;
+    redirectToLoginIfUnauthorized(error, queryKey);
     console.error("[API Query Error]", error);
   }
 });

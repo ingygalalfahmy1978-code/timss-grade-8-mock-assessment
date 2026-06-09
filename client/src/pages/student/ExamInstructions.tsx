@@ -6,7 +6,11 @@ export default function ExamInstructions() {
   const { examId, classId } = useParams<{ examId: string; classId: string }>();
   const [, navigate] = useLocation();
 
-  const { data: availableExams } = trpc.student.availableExams.useQuery();
+  const { data: availableExams } = trpc.student.availableExams.useQuery(undefined, {
+    retry: false,
+    staleTime: 10 * 1000,
+    refetchOnWindowFocus: false,
+  });
   const examItem = availableExams?.find(
     (e) => e.exam.id === Number(examId) && e.classId === Number(classId)
   );
