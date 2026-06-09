@@ -31,15 +31,18 @@ import {
   getOrCreateAttempt,
   getPlatformUserById,
   getPlatformUserByUsername,
+  getQuestionnaireResponse,
   getReportByAttemptId,
   getReportsByClass,
   getReportsByStudent,
   getStudentsInClass,
   removeStudentFromClass,
+  saveQuestionnaireResponse,
   saveStudentAnswer,
   saveStudentReport,
   setExamQuestions,
   submitAttempt,
+  updateAttemptSession,
   updateClass,
   updateExam,
   updatePlatformUser,
@@ -99,6 +102,93 @@ const teacherOrAdminProcedure = platformProcedure.use(({ ctx, next }) => {
   return next({ ctx });
 });
 
+// ─── Scoring Helper ───────────────────────────────────────────────────────────
+function scoreAnswer(
+  questionType: string,
+  answerGiven: string | null,
+  correctAnswer: string,
+  maxPoints: number
+): { isCorrect: boolean; pointsEarned: number } {
+  if (!answerGiven) return { isCorrect: false, pointsEarned: 0 };
+
+  if (questionType === "multiple_choice") {
+    const correct = answerGiven.trim().toUpperCase() === correctAnswer.trim().toUpperCase();
+    return { isCorrect: correct, pointsEarned: correct ? maxPoints : 0 };
+  }
+
+  if (questionType === "drag_drop" || questionType === "matching") {
+    try {
+      const given = JSON.parse(answerGiven);
+      const expected = JSON.parse(correctAnswer);
+      const correct = JSON.stringify(given) === JSON.stringify(expected);
+      return { isCorrect: correct, pointsEarned: correct ? maxPoints : 0 };
+    } catch {
+      return { isCorrect: false, pointsEarned: 0 };
+    }
+  }
+
+  if (questionType === "ordering") {
+    const given = answerGiven.trim().toLowerCase();
+    const expected = correctAnswer.trim().toLowerCase();
+    const correct = given === expected;
+    return { isCorrect: correct, pointsEarned: correct ? maxPoints : 0 };
+  }
+
+  if (questionType === "pattern_interaction") {
+    const given = answerGiven.trim().toLowerCase();
+    const expected = correctAnswer.trim().toLowerCase();
+    const correct = given === expected;
+    return { isCorrect: correct, pointsEarned: correct ? maxPoints : 0 };
+  }
+
+  if (questionType === "psi_lab") {
+    try {
+      const given = JSON.parse(answerGiven);
+      const expected = JSON.parse(correctAnswer);
+      let correctCount = 0;
+      let total = 0;
+      for (const key of Object.keys(expected)) {
+        total++;
+        if (given[key]?.toString().trim().toLowerCase() === expected[key]?.toString().trim().toLowerCase()) {
+          correctCount++;
+        }
+      }
+      if (total === 0) return { isCorrect: false, pointsEarned: 0 };
+      const allCorrect = correctCount === total;
+      if (maxPoints === 1) return { isCorrect: allCorrect, pointsEarned: allCorrect ? 1 : 0 };
+      // Partial credit for PSI lab
+      if (correctCount === total) return { isCorrect: true, pointsEarned: 2 };
+      if (correctCount >= Math.ceil(total / 2)) return { isCorrect: false, pointsEarned: 1 };
+      return { isCorrect: false, pointsEarned: 0 };
+    } catch {
+      return { isCorrect: false, pointsEarned: 0 };
+    }
+  }
+
+  if (questionType === "drawing_canvas") {
+    // Drawing canvas is teacher-graded; auto-score as 0 pending review
+    return { isCorrect: false, pointsEarned: 0 };
+  }
+
+  if (questionType === "partial_credit_short_answer") {
+    // Auto-score: exact match = full credit, partial keyword match = 1 point
+    const given = answerGiven.trim().toLowerCase();
+    const expected = correctAnswer.trim().toLowerCase();
+    if (given === expected) return { isCorrect: true, pointsEarned: maxPoints };
+    // Check if key terms are present
+    const keyTerms = expected.split(/[;,\s]+/).filter((t) => t.length > 3);
+    const matchCount = keyTerms.filter((t) => given.includes(t)).length;
+    if (matchCount >= Math.ceil(keyTerms.length / 2)) return { isCorrect: false, pointsEarned: 1 };
+    return { isCorrect: false, pointsEarned: 0 };
+  }
+
+  // Default: short_answer
+  const given = answerGiven.trim().toLowerCase();
+  const expected = correctAnswer.trim().toLowerCase();
+  const correct = given === expected || (expected.includes(given) && given.length > 3);
+  return { isCorrect: correct, pointsEarned: correct ? maxPoints : 0 };
+}
+
 // ─── Report Generation Helper ─────────────────────────────────────────────────
 function generateReportData(
   student: { id: number; name: string },
@@ -106,73 +196,87 @@ function generateReportData(
   className: string,
   attempt: {
     totalScore: number | null;
+    totalMaxPoints: number | null;
     totalQuestions: number | null;
     mathScore: number | null;
+    mathMaxPoints: number | null;
     mathTotal: number | null;
     scienceScore: number | null;
+    scienceMaxPoints: number | null;
     scienceTotal: number | null;
     domainBreakdown: unknown;
     timeSpentSeconds: number | null;
+    session1TimeSpentSeconds: number | null;
+    session2TimeSpentSeconds: number | null;
     submittedAt: Date | null;
   },
-  answers: Array<{ questionId: number; answerGiven: string | null; isCorrect: boolean | null }>,
+  answers: Array<{ questionId: number; answerGiven: string | null; isCorrect: boolean | null; pointsEarned: number }>,
   questionsList: Array<{
     id: number;
     subject: string;
     contentDomain: string;
+    scienceSubDomain: string | null;
     cognitiveDomain: string;
     difficulty: string;
     questionType: string;
     correctAnswer: string;
+    maxPoints: number;
+    session: string | null;
   }>
 ) {
   const totalScore = attempt.totalScore ?? 0;
+  const totalMaxPoints = attempt.totalMaxPoints ?? questionsList.length;
   const totalQuestions = attempt.totalQuestions ?? 0;
-  const percentage = totalQuestions > 0 ? Math.round((totalScore / totalQuestions) * 100) : 0;
+  const percentage = totalMaxPoints > 0 ? Math.round((totalScore / totalMaxPoints) * 100) : 0;
 
-  const domainBreakdown = attempt.domainBreakdown as Record<string, Record<string, { correct: number; total: number }>> | null;
-
-  // Identify strengths and weaknesses
-  const contentDomainScores: Record<string, { correct: number; total: number }> = {};
-  const cognitiveDomainScores: Record<string, { correct: number; total: number }> = {};
+  const contentDomainScores: Record<string, { earned: number; max: number; total: number }> = {};
+  const cognitiveDomainScores: Record<string, { earned: number; max: number; total: number }> = {};
+  const scienceSubDomainScores: Record<string, { earned: number; max: number; total: number }> = {};
 
   for (const ans of answers) {
     const q = questionsList.find((q) => q.id === ans.questionId);
     if (!q) continue;
-    if (!contentDomainScores[q.contentDomain]) contentDomainScores[q.contentDomain] = { correct: 0, total: 0 };
-    if (!cognitiveDomainScores[q.cognitiveDomain]) cognitiveDomainScores[q.cognitiveDomain] = { correct: 0, total: 0 };
+
+    if (!contentDomainScores[q.contentDomain]) contentDomainScores[q.contentDomain] = { earned: 0, max: 0, total: 0 };
+    if (!cognitiveDomainScores[q.cognitiveDomain]) cognitiveDomainScores[q.cognitiveDomain] = { earned: 0, max: 0, total: 0 };
+
     contentDomainScores[q.contentDomain].total++;
+    contentDomainScores[q.contentDomain].max += q.maxPoints;
+    contentDomainScores[q.contentDomain].earned += ans.pointsEarned;
+
     cognitiveDomainScores[q.cognitiveDomain].total++;
-    if (ans.isCorrect) {
-      contentDomainScores[q.contentDomain].correct++;
-      cognitiveDomainScores[q.cognitiveDomain].correct++;
+    cognitiveDomainScores[q.cognitiveDomain].max += q.maxPoints;
+    cognitiveDomainScores[q.cognitiveDomain].earned += ans.pointsEarned;
+
+    if (q.scienceSubDomain) {
+      if (!scienceSubDomainScores[q.scienceSubDomain]) scienceSubDomainScores[q.scienceSubDomain] = { earned: 0, max: 0, total: 0 };
+      scienceSubDomainScores[q.scienceSubDomain].total++;
+      scienceSubDomainScores[q.scienceSubDomain].max += q.maxPoints;
+      scienceSubDomainScores[q.scienceSubDomain].earned += ans.pointsEarned;
     }
   }
 
   const strengths: string[] = [];
   const weaknesses: string[] = [];
   for (const [domain, scores] of Object.entries(contentDomainScores)) {
-    const pct = scores.total > 0 ? (scores.correct / scores.total) * 100 : 0;
+    const pct = scores.max > 0 ? (scores.earned / scores.max) * 100 : 0;
     if (pct >= 70) strengths.push(domain);
     else if (pct < 50) weaknesses.push(domain);
   }
 
-  // Misconception notes
   const misconceptions: string[] = [];
   for (const ans of answers) {
-    if (ans.isCorrect === false) {
+    if (ans.pointsEarned === 0 && ans.answerGiven) {
       const q = questionsList.find((q) => q.id === ans.questionId);
       if (q) misconceptions.push(`${q.subject} – ${q.contentDomain} (${q.cognitiveDomain})`);
     }
   }
 
-  // Intervention group
   let interventionGroup = "Group A – Advanced";
   if (percentage < 40) interventionGroup = "Group D – Intensive Support";
   else if (percentage < 60) interventionGroup = "Group C – Targeted Intervention";
   else if (percentage < 75) interventionGroup = "Group B – Consolidation";
 
-  // Next practice targets
   const nextTargets: string[] = weaknesses.map((w) => `Review and practice: ${w}`);
   if (nextTargets.length === 0) nextTargets.push("Challenge extension tasks across all domains");
 
@@ -181,14 +285,20 @@ function generateReportData(
     className,
     examName: exam.name,
     totalScore,
+    totalMaxPoints,
     totalQuestions,
     percentage,
     mathScore: attempt.mathScore ?? 0,
+    mathMaxPoints: attempt.mathMaxPoints ?? 0,
     mathTotal: attempt.mathTotal ?? 0,
     scienceScore: attempt.scienceScore ?? 0,
+    scienceMaxPoints: attempt.scienceMaxPoints ?? 0,
     scienceTotal: attempt.scienceTotal ?? 0,
+    session1TimeSpentSeconds: attempt.session1TimeSpentSeconds ?? 0,
+    session2TimeSpentSeconds: attempt.session2TimeSpentSeconds ?? 0,
     contentDomainBreakdown: contentDomainScores,
     cognitiveDomainBreakdown: cognitiveDomainScores,
+    scienceSubDomainBreakdown: scienceSubDomainScores,
     strengths: strengths.length > 0 ? strengths : ["No areas of strength identified yet"],
     weaknesses: weaknesses.length > 0 ? weaknesses : ["No significant weaknesses identified"],
     misconceptionNotes:
@@ -394,17 +504,26 @@ export const appRouter = router({
         z.object({
           subject: z.enum(["Math", "Science"]),
           contentDomain: z.string().min(1),
+          scienceSubDomain: z.enum(["Earth Science", "Biology", "Chemistry", "Physics"]).optional(),
+          session: z.enum(["math_session", "science_session"]).optional(),
+          blockNumber: z.number().optional(),
           cognitiveDomain: z.enum(["Knowing", "Applying", "Reasoning"]),
           difficulty: z.enum(["Easy", "Medium", "Hard"]),
-          questionType: z.enum(["multiple_choice", "short_answer"]),
+          questionType: z.enum([
+            "multiple_choice", "short_answer", "drag_drop", "matching", "ordering",
+            "hotspot", "drawing_canvas", "pattern_interaction", "psi_lab", "partial_credit_short_answer"
+          ]),
+          maxPoints: z.number().min(1).max(2).optional(),
           questionText: z.string().min(1),
-          options: z.array(z.object({ id: z.string(), text: z.string() })).optional(),
+          options: z.unknown().optional(),
           correctAnswer: z.string().min(1),
+          imageUrl: z.string().optional(),
           explanation: z.string().optional(),
+          interactiveData: z.unknown().optional(),
         })
       )
       .mutation(async ({ input }) => {
-        await createQuestion({ ...input, options: input.options ?? null });
+        await createQuestion(input);
         return { success: true };
       }),
 
@@ -414,18 +533,27 @@ export const appRouter = router({
           id: z.number(),
           subject: z.enum(["Math", "Science"]).optional(),
           contentDomain: z.string().optional(),
+          scienceSubDomain: z.enum(["Earth Science", "Biology", "Chemistry", "Physics"]).optional().nullable(),
+          session: z.enum(["math_session", "science_session"]).optional().nullable(),
+          blockNumber: z.number().optional().nullable(),
           cognitiveDomain: z.enum(["Knowing", "Applying", "Reasoning"]).optional(),
           difficulty: z.enum(["Easy", "Medium", "Hard"]).optional(),
-          questionType: z.enum(["multiple_choice", "short_answer"]).optional(),
+          questionType: z.enum([
+            "multiple_choice", "short_answer", "drag_drop", "matching", "ordering",
+            "hotspot", "drawing_canvas", "pattern_interaction", "psi_lab", "partial_credit_short_answer"
+          ]).optional(),
+          maxPoints: z.number().min(1).max(2).optional(),
           questionText: z.string().optional(),
-          options: z.array(z.object({ id: z.string(), text: z.string() })).optional().nullable(),
+          options: z.unknown().optional(),
           correctAnswer: z.string().optional(),
+          imageUrl: z.string().optional().nullable(),
           explanation: z.string().optional().nullable(),
+          interactiveData: z.unknown().optional().nullable(),
         })
       )
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
-        await updateQuestion(id, data);
+        await updateQuestion(id, data as Parameters<typeof updateQuestion>[1]);
         return { success: true };
       }),
 
@@ -451,8 +579,12 @@ export const appRouter = router({
         z.object({
           id: z.number(),
           name: z.string().optional(),
-          description: z.string().optional().nullable(),
+          description: z.string().optional(),
           durationMinutes: z.number().optional(),
+          session1Minutes: z.number().optional(),
+          breakMinutes: z.number().optional(),
+          session2Minutes: z.number().optional(),
+          useBlockRotation: z.boolean().optional(),
           isPublished: z.boolean().optional(),
         })
       )
@@ -464,7 +596,9 @@ export const appRouter = router({
 
     getExamWithQuestions: adminProcedure
       .input(z.object({ examId: z.number() }))
-      .query(async ({ input }) => getExamWithQuestions(input.examId)),
+      .query(async ({ input }) => {
+        return getExamWithQuestions(input.examId);
+      }),
 
     setExamQuestions: adminProcedure
       .input(z.object({ examId: z.number(), questionIds: z.array(z.number()) }))
@@ -473,7 +607,6 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    // Assign exam to class
     assignExamToClass: adminProcedure
       .input(z.object({ classId: z.number(), examId: z.number() }))
       .mutation(async ({ input, ctx }) => {
@@ -481,17 +614,23 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    deactivateExamForClass: adminProcedure
-      .input(z.object({ classId: z.number(), examId: z.number() }))
-      .mutation(async ({ input }) => {
-        await deactivateExamForClass(input.classId, input.examId);
-        return { success: true };
+    getClassReports: adminProcedure
+      .input(z.object({ classId: z.number() }))
+      .query(async ({ input }) => {
+        return getReportsByClass(input.classId);
+      }),
+
+    getAttemptsByClass: adminProcedure
+      .input(z.object({ classId: z.number() }))
+      .query(async ({ input }) => {
+        return getAttemptsByClass(input.classId);
       }),
   }),
 
   // ─── Teacher ──────────────────────────────────────────────────────────────
   teacher: router({
     myClasses: teacherOrAdminProcedure.query(async ({ ctx }) => {
+      if (ctx.platformUser.role === "admin") return getAllClasses();
       const all = await getAllClasses();
       return all.filter((c) => c.teacherId === ctx.platformUser.id);
     }),
@@ -557,7 +696,9 @@ export const appRouter = router({
             ...a,
             studentName: student?.name ?? "Unknown",
             percentage:
-              a.totalQuestions && a.totalQuestions > 0
+              a.totalMaxPoints && a.totalMaxPoints > 0
+                ? Math.round(((a.totalScore ?? 0) / a.totalMaxPoints) * 100)
+                : a.totalQuestions && a.totalQuestions > 0
                 ? Math.round(((a.totalScore ?? 0) / a.totalQuestions) * 100)
                 : null,
           });
@@ -597,6 +738,8 @@ export const appRouter = router({
             classId: cls.id,
             attemptStatus: attempt?.status ?? null,
             attemptId: attempt?.id ?? null,
+            currentSession: attempt?.currentSession ?? null,
+            questionnaireCompleted: attempt?.questionnaireCompleted ?? false,
           });
         }
       }
@@ -606,67 +749,129 @@ export const appRouter = router({
     startExam: platformProcedure
       .input(z.object({ examId: z.number(), classId: z.number() }))
       .mutation(async ({ input, ctx }) => {
-        // Verify exam is active for this class
         const assignments = await getClassExamAssignments(input.classId);
         const active = assignments.find((a) => a.examId === input.examId && a.isActive);
         if (!active) throw new TRPCError({ code: "FORBIDDEN", message: "Exam is not active" });
 
         const attempt = await getOrCreateAttempt(ctx.platformUser.id, input.examId, input.classId);
         if (attempt.status === "submitted") {
-          // Return a special flag so the client can redirect to the completion page
           const examData = await getExamWithQuestions(input.examId);
           return {
             attemptId: attempt.id,
             examName: examData?.name ?? "Assessment",
             durationMinutes: examData?.durationMinutes ?? 90,
+            session1Minutes: examData?.session1Minutes ?? 45,
+            breakMinutes: examData?.breakMinutes ?? 5,
+            session2Minutes: examData?.session2Minutes ?? 45,
             questions: [],
+            session1Questions: [],
+            session2Questions: [],
             savedAnswers: [],
             startedAt: attempt.startedAt,
+            currentSession: attempt.currentSession,
             alreadySubmitted: true,
+            questionnaireCompleted: attempt.questionnaireCompleted,
           };
         }
 
         const examData = await getExamWithQuestions(input.examId);
         if (!examData) throw new TRPCError({ code: "NOT_FOUND" });
 
-        // Return questions WITHOUT correct answers
-        const safeQuestions = (examData.questions as Array<{
+        type RawQ = {
           id: number;
           subject: string;
           contentDomain: string;
+          scienceSubDomain: string | null;
           cognitiveDomain: string;
           difficulty: string;
           questionType: string;
+          maxPoints: number;
           questionText: string;
           options: unknown;
           imageUrl: string | null;
           interactiveData: unknown;
-        }>).map((q) => ({
+          examSession: string | null;
+          examBlockNumber: number | null;
+        };
+
+        const safeQuestions = (examData.questions as RawQ[]).map((q) => ({
           id: q.id,
           subject: q.subject,
           contentDomain: q.contentDomain,
+          scienceSubDomain: q.scienceSubDomain,
           cognitiveDomain: q.cognitiveDomain,
           difficulty: q.difficulty,
           questionType: q.questionType,
+          maxPoints: q.maxPoints,
           questionText: q.questionText,
           options: q.options,
           imageUrl: q.imageUrl,
           interactiveData: q.interactiveData ?? null,
+          session: q.examSession ?? q.subject === "Math" ? "math_session" : "science_session",
         }));
+
+        const session1Questions = safeQuestions.filter((q) => q.session === "math_session");
+        const session2Questions = safeQuestions.filter((q) => q.session === "science_session");
 
         const existingAnswers = await getAnswersForAttempt(attempt.id);
         return {
           attemptId: attempt.id,
           examName: examData.name,
           durationMinutes: examData.durationMinutes,
+          session1Minutes: examData.session1Minutes,
+          breakMinutes: examData.breakMinutes,
+          session2Minutes: examData.session2Minutes,
           questions: safeQuestions,
+          session1Questions,
+          session2Questions,
           savedAnswers: existingAnswers.map((a) => ({
             questionId: a.questionId,
             answerGiven: a.answerGiven,
             isFlagged: a.isFlagged,
+            pointsEarned: a.pointsEarned,
           })),
           startedAt: attempt.startedAt,
+          currentSession: attempt.currentSession,
+          session1CompletedAt: attempt.session1CompletedAt,
+          session2StartedAt: attempt.session2StartedAt,
+          alreadySubmitted: false,
+          questionnaireCompleted: attempt.questionnaireCompleted,
         };
+      }),
+
+    // Complete Session 1 (Math) and enter break
+    completeSession1: platformProcedure
+      .input(z.object({ attemptId: z.number(), session1TimeSpentSeconds: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const attempt = await getAttemptById(input.attemptId);
+        if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
+        if (attempt.studentId !== ctx.platformUser.id) throw new TRPCError({ code: "FORBIDDEN" });
+        if (attempt.status === "submitted") return { success: true };
+
+        await updateAttemptSession(input.attemptId, {
+          status: "on_break",
+          currentSession: "science_session",
+          session1CompletedAt: new Date(),
+          session1TimeSpentSeconds: input.session1TimeSpentSeconds,
+        });
+        return { success: true };
+      }),
+
+    // Start Session 2 (Science) after break
+    startSession2: platformProcedure
+      .input(z.object({ attemptId: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const attempt = await getAttemptById(input.attemptId);
+        if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
+        if (attempt.studentId !== ctx.platformUser.id) throw new TRPCError({ code: "FORBIDDEN" });
+        if (attempt.status === "submitted") return { success: true };
+
+        await updateAttemptSession(input.attemptId, {
+          status: "session2",
+          currentSession: "science_session",
+          session2StartedAt: new Date(),
+        });
+        return { success: true };
       }),
 
     saveAnswer: platformProcedure
@@ -676,6 +881,7 @@ export const appRouter = router({
           questionId: z.number(),
           answerGiven: z.string().nullable(),
           isFlagged: z.boolean().optional(),
+          session: z.enum(["math_session", "science_session"]).optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -690,12 +896,17 @@ export const appRouter = router({
           questionId: input.questionId,
           answerGiven: input.answerGiven,
           isFlagged: input.isFlagged ?? false,
+          session: input.session,
         });
         return { success: true };
       }),
 
     submitExam: platformProcedure
-      .input(z.object({ attemptId: z.number(), timeSpentSeconds: z.number() }))
+      .input(z.object({
+        attemptId: z.number(),
+        timeSpentSeconds: z.number(),
+        session2TimeSpentSeconds: z.number().optional(),
+      }))
       .mutation(async ({ input, ctx }) => {
         const attempt = await getAttemptById(input.attemptId);
         if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
@@ -708,82 +919,100 @@ export const appRouter = router({
         if (!examData) throw new TRPCError({ code: "NOT_FOUND" });
 
         const answers = await getAnswersForAttempt(input.attemptId);
-        const questionsList = examData.questions as Array<{
+        type RawQ = {
           id: number;
           subject: string;
           contentDomain: string;
+          scienceSubDomain: string | null;
           cognitiveDomain: string;
           difficulty: string;
           questionType: string;
+          maxPoints: number;
           correctAnswer: string;
-        }>;
+          examSession: string | null;
+        };
+        const questionsList = examData.questions as RawQ[];
 
-        // Score answers
+        // Score answers with partial credit
         let totalScore = 0;
+        let totalMaxPoints = 0;
         let mathScore = 0;
+        let mathMaxPoints = 0;
         let mathTotal = 0;
         let scienceScore = 0;
+        let scienceMaxPoints = 0;
         let scienceTotal = 0;
-        const contentDomainBreakdown: Record<string, { correct: number; total: number }> = {};
-        const cognitiveDomainBreakdown: Record<string, { correct: number; total: number }> = {};
+        const contentDomainBreakdown: Record<string, { earned: number; max: number; total: number }> = {};
+        const cognitiveDomainBreakdown: Record<string, { earned: number; max: number; total: number }> = {};
 
-        const scoredAnswers: Array<{ questionId: number; answerGiven: string | null; isCorrect: boolean | null }> = [];
+        const scoredAnswers: Array<{
+          questionId: number;
+          answerGiven: string | null;
+          isCorrect: boolean | null;
+          pointsEarned: number;
+        }> = [];
 
         for (const q of questionsList) {
           const ans = answers.find((a) => a.questionId === q.id);
           const answerGiven = ans?.answerGiven ?? null;
+          const maxPoints = q.maxPoints ?? 1;
 
-          let isCorrect: boolean | null = null;
-          if (q.questionType === "multiple_choice") {
-            isCorrect = answerGiven?.trim().toUpperCase() === q.correctAnswer.trim().toUpperCase();
-          } else {
-            // Short answer: partial credit - mark as null for manual review, but auto-check simple matches
-            const given = answerGiven?.trim().toLowerCase() ?? "";
-            const correct = q.correctAnswer.trim().toLowerCase();
-            isCorrect = given === correct || correct.includes(given) && given.length > 3;
-          }
+          const { isCorrect, pointsEarned } = scoreAnswer(q.questionType, answerGiven, q.correctAnswer, maxPoints);
 
-          if (isCorrect) totalScore++;
+          totalScore += pointsEarned;
+          totalMaxPoints += maxPoints;
 
-          if (q.subject === "Math") {
+          const session = q.examSession ?? (q.subject === "Math" ? "math_session" : "science_session");
+          if (session === "math_session") {
             mathTotal++;
-            if (isCorrect) mathScore++;
+            mathMaxPoints += maxPoints;
+            mathScore += pointsEarned;
           } else {
             scienceTotal++;
-            if (isCorrect) scienceScore++;
+            scienceMaxPoints += maxPoints;
+            scienceScore += pointsEarned;
           }
 
           if (!contentDomainBreakdown[q.contentDomain])
-            contentDomainBreakdown[q.contentDomain] = { correct: 0, total: 0 };
+            contentDomainBreakdown[q.contentDomain] = { earned: 0, max: 0, total: 0 };
           contentDomainBreakdown[q.contentDomain].total++;
-          if (isCorrect) contentDomainBreakdown[q.contentDomain].correct++;
+          contentDomainBreakdown[q.contentDomain].max += maxPoints;
+          contentDomainBreakdown[q.contentDomain].earned += pointsEarned;
 
           if (!cognitiveDomainBreakdown[q.cognitiveDomain])
-            cognitiveDomainBreakdown[q.cognitiveDomain] = { correct: 0, total: 0 };
+            cognitiveDomainBreakdown[q.cognitiveDomain] = { earned: 0, max: 0, total: 0 };
           cognitiveDomainBreakdown[q.cognitiveDomain].total++;
-          if (isCorrect) cognitiveDomainBreakdown[q.cognitiveDomain].correct++;
+          cognitiveDomainBreakdown[q.cognitiveDomain].max += maxPoints;
+          cognitiveDomainBreakdown[q.cognitiveDomain].earned += pointsEarned;
 
-          // Update answer with isCorrect
+          // Update answer with scoring
           if (ans) {
             await saveStudentAnswer({
               attemptId: input.attemptId,
               questionId: q.id,
-              answerGiven: answerGiven,
+              answerGiven,
               isFlagged: ans.isFlagged,
+              pointsEarned,
+              session: session as "math_session" | "science_session",
             });
           }
-          scoredAnswers.push({ questionId: q.id, answerGiven, isCorrect });
+          scoredAnswers.push({ questionId: q.id, answerGiven, isCorrect, pointsEarned });
         }
 
         await submitAttempt(input.attemptId, {
           totalScore,
+          totalMaxPoints,
           totalQuestions: questionsList.length,
           mathScore,
+          mathMaxPoints,
           mathTotal,
           scienceScore,
+          scienceMaxPoints,
           scienceTotal,
           domainBreakdown: { contentDomain: contentDomainBreakdown, cognitiveDomain: cognitiveDomainBreakdown },
           timeSpentSeconds: input.timeSpentSeconds,
+          session1TimeSpentSeconds: attempt.session1TimeSpentSeconds ?? undefined,
+          session2TimeSpentSeconds: input.session2TimeSpentSeconds,
         });
 
         // Generate report
@@ -791,24 +1020,33 @@ export const appRouter = router({
         const exam = await getExamById(attempt.examId);
         const cls = await getClassById(attempt.classId);
         if (student && exam && cls) {
-          const updatedAttempt = await getAttemptById(input.attemptId);
           const reportData = generateReportData(
             { id: student.id, name: student.name },
             { id: exam.id, name: exam.name },
             cls.name,
             {
               totalScore,
+              totalMaxPoints,
               totalQuestions: questionsList.length,
               mathScore,
+              mathMaxPoints,
               mathTotal,
               scienceScore,
+              scienceMaxPoints,
               scienceTotal,
               domainBreakdown: { contentDomain: contentDomainBreakdown, cognitiveDomain: cognitiveDomainBreakdown },
               timeSpentSeconds: input.timeSpentSeconds,
+              session1TimeSpentSeconds: attempt.session1TimeSpentSeconds ?? null,
+              session2TimeSpentSeconds: input.session2TimeSpentSeconds ?? null,
               submittedAt: new Date(),
             },
             scoredAnswers,
-            questionsList
+            questionsList.map((q) => ({
+              ...q,
+              scienceSubDomain: q.scienceSubDomain,
+              maxPoints: q.maxPoints ?? 1,
+              session: q.examSession,
+            }))
           );
           await saveStudentReport({
             attemptId: input.attemptId,
@@ -820,6 +1058,35 @@ export const appRouter = router({
         }
 
         return { success: true };
+      }),
+
+    // Submit background questionnaire
+    submitQuestionnaire: platformProcedure
+      .input(z.object({
+        attemptId: z.number(),
+        responses: z.record(z.string(), z.unknown()),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const attempt = await getAttemptById(input.attemptId);
+        if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
+        if (attempt.studentId !== ctx.platformUser.id) throw new TRPCError({ code: "FORBIDDEN" });
+
+        await saveQuestionnaireResponse({
+          attemptId: input.attemptId,
+          studentId: ctx.platformUser.id,
+          examId: attempt.examId,
+          responses: input.responses,
+        });
+        return { success: true };
+      }),
+
+    getQuestionnaire: platformProcedure
+      .input(z.object({ attemptId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const attempt = await getAttemptById(input.attemptId);
+        if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
+        if (attempt.studentId !== ctx.platformUser.id) throw new TRPCError({ code: "FORBIDDEN" });
+        return getQuestionnaireResponse(input.attemptId);
       }),
 
     myAttempts: platformProcedure.query(async ({ ctx }) => {

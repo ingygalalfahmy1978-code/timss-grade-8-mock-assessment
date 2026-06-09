@@ -9,22 +9,47 @@ const MATH_DOMAINS = ["Number", "Algebra", "Geometry", "Data and Probability"];
 const SCIENCE_DOMAINS = ["Biology", "Chemistry", "Physics", "Earth Science"];
 const COGNITIVE_DOMAINS = ["Knowing", "Applying", "Reasoning"] as const;
 const DIFFICULTIES = ["Easy", "Medium", "Hard"] as const;
+const QUESTION_TYPES = [
+  { value: "multiple_choice", label: "Multiple Choice" },
+  { value: "short_answer", label: "Short Answer" },
+  { value: "partial_credit_short_answer", label: "Partial Credit Short Answer (0-2 pts)" },
+  { value: "drag_drop", label: "Drag & Drop" },
+  { value: "matching", label: "Matching" },
+  { value: "ordering", label: "Ordering" },
+  { value: "drawing_canvas", label: "Drawing Canvas" },
+  { value: "pattern_interaction", label: "Pattern Interaction" },
+  { value: "psi_lab", label: "PSI Lab (Problem Solving & Inquiry)" },
+] as const;
+
+const SCIENCE_SUBDOMAINS: Record<string, string[]> = {
+  Biology: ["Life Processes", "Ecosystems", "Genetics", "Evolution"],
+  Chemistry: ["Matter", "Chemical Reactions", "Acids & Bases", "Periodic Table"],
+  Physics: ["Forces & Motion", "Energy", "Electricity & Magnetism", "Waves & Light"],
+  "Earth Science": ["Earth Structure", "Atmosphere", "Oceans", "Space"],
+};
+
+type QuestionTypeValue = typeof QUESTION_TYPES[number]["value"];
 
 interface QuestionForm {
   subject: "Math" | "Science";
   contentDomain: string;
+  scienceSubDomain: string;
   cognitiveDomain: "Knowing" | "Applying" | "Reasoning";
   difficulty: "Easy" | "Medium" | "Hard";
-  questionType: "multiple_choice" | "short_answer";
+  questionType: QuestionTypeValue;
   questionText: string;
   options: { id: string; text: string }[];
   correctAnswer: string;
   explanation: string;
+  maxPoints: number;
+  examSession: "math_session" | "science_session" | "";
+  blockNumber: number;
 }
 
 const defaultForm: QuestionForm = {
   subject: "Math",
   contentDomain: "Number",
+  scienceSubDomain: "",
   cognitiveDomain: "Knowing",
   difficulty: "Easy",
   questionType: "multiple_choice",
@@ -37,6 +62,9 @@ const defaultForm: QuestionForm = {
   ],
   correctAnswer: "A",
   explanation: "",
+  maxPoints: 1,
+  examSession: "",
+  blockNumber: 1,
 };
 
 export default function AdminQuestions() {
@@ -66,17 +94,41 @@ export default function AdminQuestions() {
     if (!form.questionText) { toast.error("Question text is required"); return; }
     if (!form.correctAnswer) { toast.error("Correct answer is required"); return; }
     try {
+      const scienceSubDomainValue = form.scienceSubDomain as "Earth Science" | "Biology" | "Chemistry" | "Physics" | undefined || undefined;
+      const examSessionValue = form.examSession || undefined;
       if (editId) {
         await updateQ.mutateAsync({
           id: editId,
-          ...form,
+          subject: form.subject,
+          contentDomain: form.contentDomain,
+          scienceSubDomain: scienceSubDomainValue ?? null,
+          cognitiveDomain: form.cognitiveDomain,
+          difficulty: form.difficulty,
+          questionType: form.questionType,
+          maxPoints: form.maxPoints,
+          questionText: form.questionText,
           options: form.questionType === "multiple_choice" ? form.options : null,
+          correctAnswer: form.correctAnswer,
+          explanation: form.explanation || null,
+          session: examSessionValue,
+          blockNumber: form.blockNumber,
         });
         toast.success("Question updated");
       } else {
         await createQ.mutateAsync({
-          ...form,
+          subject: form.subject,
+          contentDomain: form.contentDomain,
+          scienceSubDomain: scienceSubDomainValue,
+          cognitiveDomain: form.cognitiveDomain,
+          difficulty: form.difficulty,
+          questionType: form.questionType,
+          maxPoints: form.maxPoints,
+          questionText: form.questionText,
           options: form.questionType === "multiple_choice" ? form.options : undefined,
+          correctAnswer: form.correctAnswer,
+          explanation: form.explanation || undefined,
+          session: examSessionValue,
+          blockNumber: form.blockNumber,
         });
         toast.success("Question added to bank");
       }
@@ -94,15 +146,19 @@ export default function AdminQuestions() {
     setForm({
       subject: q.subject as "Math" | "Science",
       contentDomain: q.contentDomain,
+      scienceSubDomain: (q as { scienceSubDomain?: string }).scienceSubDomain ?? "",
       cognitiveDomain: q.cognitiveDomain as "Knowing" | "Applying" | "Reasoning",
       difficulty: q.difficulty as "Easy" | "Medium" | "Hard",
-      questionType: q.questionType as "multiple_choice" | "short_answer",
+      questionType: q.questionType as QuestionTypeValue,
       questionText: q.questionText,
       options: (q.options as { id: string; text: string }[]) ?? [
         { id: "A", text: "" }, { id: "B", text: "" }, { id: "C", text: "" }, { id: "D", text: "" },
       ],
       correctAnswer: q.correctAnswer,
       explanation: q.explanation ?? "",
+      maxPoints: (q as { maxPoints?: number }).maxPoints ?? 1,
+      examSession: ((q as { examSession?: string }).examSession ?? "") as "math_session" | "science_session" | "",
+      blockNumber: (q as { blockNumber?: number }).blockNumber ?? 1,
     });
     setShowForm(true);
   };
@@ -154,17 +210,26 @@ export default function AdminQuestions() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
-                    <select value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value as "Math" | "Science", contentDomain: e.target.value === "Math" ? "Number" : "Biology" })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <select value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value as "Math" | "Science", contentDomain: e.target.value === "Math" ? "Number" : "Biology", scienceSubDomain: "", examSession: e.target.value === "Math" ? "math_session" : "science_session" })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
                       <option value="Math">Mathematics</option>
                       <option value="Science">Science</option>
                     </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Content Domain *</label>
-                    <select value={form.contentDomain} onChange={(e) => setForm({ ...form, contentDomain: e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <select value={form.contentDomain} onChange={(e) => setForm({ ...form, contentDomain: e.target.value, scienceSubDomain: "" })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
                       {contentDomains.map((d) => <option key={d} value={d}>{d}</option>)}
                     </select>
                   </div>
+                  {form.subject === "Science" && SCIENCE_SUBDOMAINS[form.contentDomain] && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Science Sub-Domain</label>
+                      <select value={form.scienceSubDomain} onChange={(e) => setForm({ ...form, scienceSubDomain: e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                        <option value="">-- Select Sub-Domain --</option>
+                        {SCIENCE_SUBDOMAINS[form.contentDomain].map((sd) => <option key={sd} value={sd}>{sd}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Cognitive Domain *</label>
                     <select value={form.cognitiveDomain} onChange={(e) => setForm({ ...form, cognitiveDomain: e.target.value as typeof form.cognitiveDomain })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
@@ -177,17 +242,36 @@ export default function AdminQuestions() {
                       {DIFFICULTIES.map((d) => <option key={d} value={d}>{d}</option>)}
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Max Points</label>
+                    <select value={form.maxPoints} onChange={(e) => setForm({ ...form, maxPoints: Number(e.target.value) })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                      <option value={1}>1 point</option>
+                      <option value={2}>2 points (partial credit)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Exam Session</label>
+                    <select value={form.examSession} onChange={(e) => setForm({ ...form, examSession: e.target.value as typeof form.examSession })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                      <option value="">-- Auto (by subject) --</option>
+                      <option value="math_session">Session 1 – Mathematics</option>
+                      <option value="science_session">Session 2 – Science</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Block Number</label>
+                    <select value={form.blockNumber} onChange={(e) => setForm({ ...form, blockNumber: Number(e.target.value) })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                      {[1,2,3,4,5,6,7].map(n => <option key={n} value={n}>Block {n}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Question Type *</label>
-                  <div className="flex gap-3">
-                    {["multiple_choice", "short_answer"].map((t) => (
-                      <label key={t} className="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" checked={form.questionType === t} onChange={() => setForm({ ...form, questionType: t as typeof form.questionType })} className="accent-blue-600" />
-                        <span className="text-sm">{t === "multiple_choice" ? "Multiple Choice" : "Short Answer"}</span>
-                      </label>
-                    ))}
-                  </div>
+                  <select value={form.questionType} onChange={(e) => setForm({ ...form, questionType: e.target.value as QuestionTypeValue })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    {QUESTION_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                  {["drawing_canvas", "pattern_interaction", "psi_lab"].includes(form.questionType) && (
+                    <p className="text-xs text-amber-600 mt-1">⚠ This question type requires interactive data (JSON). Students will see a canvas/simulation interface.</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Question Text *</label>
@@ -266,7 +350,15 @@ export default function AdminQuestions() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-gray-500 text-xs">
-                        {q.questionType === "multiple_choice" ? "MC" : "SA"}
+                        {q.questionType === "multiple_choice" ? "MC" :
+                         q.questionType === "short_answer" ? "SA" :
+                         q.questionType === "partial_credit_short_answer" ? "SA★" :
+                         q.questionType === "drag_drop" ? "D&D" :
+                         q.questionType === "matching" ? "Match" :
+                         q.questionType === "ordering" ? "Order" :
+                         q.questionType === "drawing_canvas" ? "Draw" :
+                         q.questionType === "pattern_interaction" ? "Pattern" :
+                         q.questionType === "psi_lab" ? "PSI" : q.questionType}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 justify-end">

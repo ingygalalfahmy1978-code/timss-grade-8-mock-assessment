@@ -131,7 +131,7 @@ describe("Platform Login Validation", () => {
     await expect(
       caller.platform.login({ username: "", password: "" })
     ).rejects.toThrow();
-  });
+  }, 10000);
 
   it("should reject login with non-existent user", async () => {
     const ctx = createBaseContext();

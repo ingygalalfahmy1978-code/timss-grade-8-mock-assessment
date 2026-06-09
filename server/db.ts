@@ -2,8 +2,10 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
+  backgroundQuestionnaireResponses,
   classExamAssignments,
   classes,
+  examBlocks,
   examQuestions,
   exams,
   platformUsers,
@@ -193,7 +195,6 @@ export async function getClassesForStudent(studentId: number) {
 export async function enrollStudentInClass(studentId: number, classId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  // Check if already enrolled
   const existing = await db
     .select()
     .from(studentClasses)
@@ -225,21 +226,18 @@ export async function getQuestionById(id: number) {
   return result[0];
 }
 
-export async function createQuestion(data: {
+export async function createQuestion(data: Partial<typeof questions.$inferInsert> & {
   subject: "Math" | "Science";
   contentDomain: string;
   cognitiveDomain: "Knowing" | "Applying" | "Reasoning";
   difficulty: "Easy" | "Medium" | "Hard";
-  questionType: "multiple_choice" | "short_answer";
+  questionType: string;
   questionText: string;
-  options?: unknown;
   correctAnswer: string;
-  imageUrl?: string;
-  explanation?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(questions).values(data);
+  await db.insert(questions).values(data as typeof questions.$inferInsert);
 }
 
 export async function updateQuestion(id: number, data: Partial<typeof questions.$inferInsert>) {
@@ -282,8 +280,19 @@ export async function getExamWithQuestions(examId: number) {
   const qIds = eqs.map((eq_) => eq_.questionId);
   const qs = await db.select().from(questions).where(inArray(questions.id, qIds));
   const qMap = new Map(qs.map((q) => [q.id, q]));
-  const orderedQuestions = eqs.map((eq_) => qMap.get(eq_.questionId)).filter(Boolean);
+  // Attach session/blockNumber from exam_questions join
+  const orderedQuestions = eqs.map((eq_) => {
+    const q = qMap.get(eq_.questionId);
+    if (!q) return null;
+    return { ...q, examSession: eq_.session, examBlockNumber: eq_.blockNumber };
+  }).filter(Boolean);
   return { ...exam, questions: orderedQuestions };
+}
+
+export async function getExamBlocks(examId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(examBlocks).where(eq(examBlocks.examId, examId)).orderBy(examBlocks.blockNumber);
 }
 
 export async function createExam(data: { name: string; description?: string; durationMinutes?: number }) {
@@ -453,11 +462,28 @@ export async function getAttemptsByExamAndClass(examId: number, classId: number)
     .orderBy(studentExamAttempts.submittedAt);
 }
 
+export async function updateAttemptSession(
+  attemptId: number,
+  data: {
+    status?: "in_progress" | "on_break" | "session2" | "submitted" | "graded";
+    currentSession?: "math_session" | "science_session";
+    session1CompletedAt?: Date;
+    session2StartedAt?: Date;
+    session1TimeSpentSeconds?: number;
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(studentExamAttempts).set(data).where(eq(studentExamAttempts.id, attemptId));
+}
+
 export async function saveStudentAnswer(data: {
   attemptId: number;
   questionId: number;
   answerGiven: string | null;
   isFlagged?: boolean;
+  pointsEarned?: number;
+  session?: "math_session" | "science_session";
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -474,10 +500,22 @@ export async function saveStudentAnswer(data: {
   if (existing.length > 0) {
     await db
       .update(studentAnswers)
-      .set({ answerGiven: data.answerGiven, isFlagged: data.isFlagged ?? false })
+      .set({
+        answerGiven: data.answerGiven,
+        isFlagged: data.isFlagged ?? false,
+        ...(data.pointsEarned !== undefined ? { pointsEarned: data.pointsEarned } : {}),
+        ...(data.session ? { session: data.session } : {}),
+      })
       .where(eq(studentAnswers.id, existing[0].id));
   } else {
-    await db.insert(studentAnswers).values(data);
+    await db.insert(studentAnswers).values({
+      attemptId: data.attemptId,
+      questionId: data.questionId,
+      answerGiven: data.answerGiven,
+      isFlagged: data.isFlagged ?? false,
+      pointsEarned: data.pointsEarned ?? 0,
+      session: data.session,
+    });
   }
 }
 
@@ -494,13 +532,18 @@ export async function submitAttempt(
   attemptId: number,
   scores: {
     totalScore: number;
+    totalMaxPoints: number;
     totalQuestions: number;
     mathScore: number;
+    mathMaxPoints: number;
     mathTotal: number;
     scienceScore: number;
+    scienceMaxPoints: number;
     scienceTotal: number;
     domainBreakdown: unknown;
     timeSpentSeconds: number;
+    session1TimeSpentSeconds?: number;
+    session2TimeSpentSeconds?: number;
   }
 ) {
   const db = await getDb();
@@ -513,6 +556,46 @@ export async function submitAttempt(
       ...scores,
     })
     .where(eq(studentExamAttempts.id, attemptId));
+}
+
+// ─── Background Questionnaire ─────────────────────────────────────────────────
+export async function saveQuestionnaireResponse(data: {
+  attemptId: number;
+  studentId: number;
+  examId: number;
+  responses: unknown;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const existing = await db
+    .select()
+    .from(backgroundQuestionnaireResponses)
+    .where(eq(backgroundQuestionnaireResponses.attemptId, data.attemptId))
+    .limit(1);
+  if (existing.length > 0) {
+    await db
+      .update(backgroundQuestionnaireResponses)
+      .set({ responses: data.responses, completedAt: new Date() })
+      .where(eq(backgroundQuestionnaireResponses.id, existing[0].id));
+  } else {
+    await db.insert(backgroundQuestionnaireResponses).values(data);
+  }
+  // Mark attempt as questionnaire completed
+  await db
+    .update(studentExamAttempts)
+    .set({ questionnaireCompleted: true })
+    .where(eq(studentExamAttempts.id, data.attemptId));
+}
+
+export async function getQuestionnaireResponse(attemptId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(backgroundQuestionnaireResponses)
+    .where(eq(backgroundQuestionnaireResponses.attemptId, attemptId))
+    .limit(1);
+  return result[0];
 }
 
 // ─── Student Reports ──────────────────────────────────────────────────────────

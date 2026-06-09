@@ -30,6 +30,7 @@ import StudentDashboard from "./pages/student/StudentDashboard";
 import ExamInstructions from "./pages/student/ExamInstructions";
 import ExamInterface from "./pages/student/ExamInterface";
 import ExamComplete from "./pages/student/ExamComplete";
+import StudentQuestionnaire from "./pages/student/StudentQuestionnaire";
 
 const Spinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -133,6 +134,9 @@ function Router() {
       </Route>
       <Route path="/student/exam/:examId/:classId/complete">
         {() => <ProtectedRoute component={ExamComplete} allowedRoles={["student"]} />}
+      </Route>
+      <Route path="/student/exam/:examId/:classId/questionnaire/:attemptId">
+        {() => <ProtectedRoute component={StudentQuestionnaire} allowedRoles={["student"]} />}
       </Route>
       <Route path="/student/exam/:examId/:classId">
         {() => <ProtectedRoute component={ExamInterface} allowedRoles={["student"]} />}
