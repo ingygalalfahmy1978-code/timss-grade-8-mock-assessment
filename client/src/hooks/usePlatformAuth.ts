@@ -4,12 +4,14 @@ import { useCallback } from "react";
 export function usePlatformAuth() {
   const { data: user, isLoading, refetch } = trpc.platform.me.useQuery(undefined, {
     retry: false,
-    staleTime: 5 * 60 * 1000,
+    // Keep staleTime short so that after login invalidation, the query re-fetches immediately
+    staleTime: 30 * 1000,
+    // Always re-fetch on mount so navigating to a protected route picks up the session
+    refetchOnMount: true,
   });
 
   const logoutMutation = trpc.platform.logout.useMutation({
     onSuccess: () => {
-      refetch();
       window.location.href = "/login";
     },
   });

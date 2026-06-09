@@ -7,9 +7,12 @@ export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const utils = trpc.useUtils();
 
   const loginMutation = trpc.platform.login.useMutation({
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
+      // Invalidate the me query so ProtectedRoute re-fetches with the new session cookie
+      await utils.platform.me.invalidate();
       if (data.role === "admin") navigate("/admin");
       else if (data.role === "teacher") navigate("/teacher");
       else navigate("/student");
@@ -41,7 +44,7 @@ export default function Login() {
         <h1 className="text-2xl font-bold text-white tracking-wide">
           Grade 8 Mock Assessment Platform
         </h1>
-        <p className="text-white/70 text-sm mt-1">Mathematics & Science · International Standards</p>
+        <p className="text-white/70 text-sm mt-1">Mathematics &amp; Science · International Standards</p>
       </div>
 
       {/* Login Card */}
@@ -83,21 +86,23 @@ export default function Login() {
             <label htmlFor="password" className="block text-sm font-semibold text-gray-700">
               Password
             </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg text-base focus:outline-none focus:border-[oklch(0.42_0.14_240)] transition-colors bg-gray-50 focus:bg-white"
-              autoComplete="current-password"
-            />
+            <div className="relative">
+              <input
+                id="password"
+                type={password.length > 0 ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg text-base focus:outline-none focus:border-[oklch(0.42_0.14_240)] transition-colors bg-gray-50 focus:bg-white pr-12"
+                autoComplete="current-password"
+              />
+            </div>
           </div>
 
           <button
             type="submit"
             disabled={loginMutation.isPending}
-            className="w-full bg-[oklch(0.42_0.14_240)] hover:bg-[oklch(0.38_0.14_240)] text-white font-semibold py-3 px-6 rounded-lg transition-all duration-150 disabled:opacity-60 disabled:cursor-not-allowed text-base mt-2"
+            className="w-full bg-[oklch(0.42_0.14_240)] hover:bg-[oklch(0.38_0.14_240)] text-white font-semibold py-3 px-6 rounded-lg transition-all duration-150 disabled:opacity-60 disabled:cursor-not-allowed text-base mt-2 active:scale-[0.97]"
           >
             {loginMutation.isPending ? (
               <span className="flex items-center justify-center gap-2">
@@ -116,22 +121,35 @@ export default function Login() {
         {/* Footer */}
         <div className="px-8 pb-6">
           <div className="border-t border-gray-100 pt-4">
+            <p className="text-xs text-gray-500 text-center mb-3 font-medium">Demo Credentials</p>
             <div className="grid grid-cols-3 gap-2 text-xs text-center text-gray-500">
-              <div className="bg-gray-50 rounded-lg p-2">
+              <button
+                type="button"
+                onClick={() => { setUsername("admin"); setPassword("Admin@2024"); setError(""); }}
+                className="bg-gray-50 hover:bg-gray-100 rounded-lg p-2 transition-colors cursor-pointer border border-gray-200"
+              >
                 <div className="font-semibold text-gray-700 text-sm">Admin</div>
-                <div>admin</div>
-              </div>
-              <div className="bg-blue-50 rounded-lg p-2">
+                <div className="text-gray-500">admin</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setUsername("teacher.ali"); setPassword("Teacher@2024"); setError(""); }}
+                className="bg-blue-50 hover:bg-blue-100 rounded-lg p-2 transition-colors cursor-pointer border border-blue-200"
+              >
                 <div className="font-semibold text-blue-700 text-sm">Teacher</div>
-                <div>teacher.ali</div>
-              </div>
-              <div className="bg-green-50 rounded-lg p-2">
+                <div className="text-blue-600">teacher.ali</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setUsername("STD001"); setPassword("Std001@2024"); setError(""); }}
+                className="bg-green-50 hover:bg-green-100 rounded-lg p-2 transition-colors cursor-pointer border border-green-200"
+              >
                 <div className="font-semibold text-green-700 text-sm">Student</div>
-                <div>STD001</div>
-              </div>
+                <div className="text-green-600">STD001</div>
+              </button>
             </div>
             <p className="text-center text-xs text-gray-400 mt-3">
-              For technical support, contact your system administrator
+              Click a role above to auto-fill credentials
             </p>
           </div>
         </div>
