@@ -10,7 +10,7 @@ import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type MCOption = { label: string; text: string };
+type MCOption = { label?: string; id?: string; text: string };
 type DragItem = { id: string; text: string };
 type DragTarget = { id: string; label: string };
 type MatchItem = { id: string; text: string };
@@ -30,21 +30,40 @@ interface InteractiveData {
   correctPairs?: Record<string, string>;
   // ordering
   correctOrder?: string[];
-  // pattern_interaction
+  // pattern_interaction (2D grid format)
   pattern?: PatternCell[][];
   patternRule?: string;
   blankPositions?: Array<[number, number]>;
   patternOptions?: string[];
+  // pattern_interaction (flat displayItems format from seed)
+  displayItems?: Array<{ id: string; value: string; isBlank?: boolean; blanks?: string[] }>;
+  choices?: string[];
+  // pattern_interaction (table format from seed)
+  patternType?: string;
+  headers?: string[];
+  rows?: Array<{ id: string; values: string[]; blanks?: number[] }>;
   // psi_lab
   labTitle?: string;
   hypothesis?: string;
+  scenario?: string;
   steps?: PSIStep[];
   dataTable?: { headers: string[]; rows: Array<Array<string | null>> };
   analysisQuestions?: Array<{ id: string; question: string; type: "text" | "select"; options?: string[] }>;
+  // psi_lab (seed format)
+  tasks?: Array<{ id: string; instruction: string; type: "multiple_choice" | "short_answer"; choices?: string[]; correctAnswer?: string }>;
+  variables?: Array<{ name: string; unit?: string; values: (string | number)[] }>;
   // drawing_canvas
   canvasPrompt?: string;
+  prompt?: string;
   backgroundImage?: string;
   drawingTools?: string[];
+  canvasType?: string;
+  gridLines?: boolean;
+  axes?: boolean;
+  preDrawnElements?: unknown[];
+  scoringHints?: unknown;
+  width?: number;
+  height?: number;
 }
 
 type Question = {
@@ -336,61 +355,126 @@ function OrderingQuestion({ data, answer, onChange }: { data: InteractiveData; a
 // ─── Pattern Interaction Question ─────────────────────────────────────────────
 
 function PatternQuestion({ data, answer, onChange }: { data: InteractiveData; answer: string; onChange: (v: string) => void }) {
-  const pattern = data.pattern || [];
-  const patternOptions = data.patternOptions || [];
   const savedAnswers = parseJson<Record<string, string>>(answer, {});
   const setAnswer = (key: string, val: string) => {
     const updated = { ...savedAnswers, [key]: val };
     onChange(JSON.stringify(updated));
   };
 
+  // Determine which format the data is in
+  const isTableFormat = data.patternType === "table" && data.rows && data.headers;
+  const isFlatFormat = !isTableFormat && data.displayItems && data.displayItems.length > 0;
+  const is2DFormat = !isTableFormat && !isFlatFormat && data.pattern && data.pattern.length > 0;
+
+  const choices = data.choices || data.patternOptions || [];
+
+  const renderChoice = (key: string) => {
+    const selected = savedAnswers[key];
+    if (choices.length > 0) {
+      return (
+        <select value={selected || ""} onChange={e => setAnswer(key, e.target.value)}
+          className="w-20 h-12 border-2 border-dashed border-purple-400 rounded-xl text-center text-sm font-bold bg-purple-50 focus:outline-none focus:border-purple-600 cursor-pointer">
+          <option value="">?</option>
+          {choices.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+      );
+    }
+    return (
+      <input type="text" value={selected || ""} onChange={e => setAnswer(key, e.target.value)}
+        placeholder="?" className="w-20 h-12 border-2 border-dashed border-purple-400 rounded-xl text-center text-sm font-bold bg-purple-50 focus:outline-none focus:border-purple-600" />
+    );
+  };
+
   return (
     <div className="mt-5">
-      {data.patternRule && (
+      {(data.patternRule) && (
         <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 mb-4">
           <p className="text-sm font-semibold text-purple-800">Pattern Rule: <span className="font-normal">{data.patternRule}</span></p>
         </div>
       )}
-      <p className="text-sm text-slate-500 mb-4">Complete the pattern by filling in the blank cells. Select from the options provided.</p>
-      <div className="overflow-x-auto">
-        <div className="inline-block min-w-full">
-          {pattern.map((row, rowIdx) => (
-            <div key={rowIdx} className="flex gap-2 mb-2">
-              {row.map((cell) => {
-                if (cell.isBlank) {
-                  const cellKey = cell.id;
-                  const selected = savedAnswers[cellKey];
+
+      {/* Table format (x/y table with blanks) */}
+      {isTableFormat && data.rows && data.headers && (
+        <div className="overflow-x-auto">
+          <table className="border-collapse rounded-xl overflow-hidden shadow-sm">
+            <thead>
+              <tr>
+                {data.headers.map((h, i) => (
+                  <th key={i} className="px-6 py-3 bg-purple-700 text-white text-sm font-bold text-center min-w-[80px]">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.map((row) => (
+                <tr key={row.id} className="border-b border-slate-200">
+                  {row.values.map((val, colIdx) => {
+                    const isBlank = row.blanks?.includes(colIdx);
+                    const cellKey = `${row.id}_${colIdx}`;
+                    return (
+                      <td key={colIdx} className="px-4 py-3 text-center bg-white">
+                        {isBlank ? renderChoice(cellKey) : (
+                          <span className="text-sm font-semibold text-slate-800">{val}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Flat displayItems format (sequence with blanks) */}
+      {isFlatFormat && data.displayItems && (
+        <div className="flex flex-wrap gap-3 items-center">
+          {data.displayItems.map((item, idx) => {
+            if (item.isBlank) {
+              return (
+                <div key={item.id} className="flex flex-col items-center gap-1">
+                  <span className="text-xs text-purple-500 font-bold">#{idx + 1}</span>
+                  {renderChoice(item.id)}
+                </div>
+              );
+            }
+            return (
+              <div key={item.id} className="w-16 h-12 border-2 border-slate-300 rounded-xl bg-white flex items-center justify-center text-sm font-bold text-slate-700 shadow-sm">
+                {item.value}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 2D grid format */}
+      {is2DFormat && data.pattern && (
+        <div className="overflow-x-auto">
+          <div className="inline-block">
+            {data.pattern.map((row, rowIdx) => (
+              <div key={rowIdx} className="flex gap-2 mb-2">
+                {row.map((cell) => {
+                  if (cell.isBlank) {
+                    return (
+                      <div key={cell.id}>{renderChoice(cell.id)}</div>
+                    );
+                  }
                   return (
-                    <div key={cell.id} className="flex flex-col gap-1">
-                      {patternOptions.length > 0 ? (
-                        <select value={selected || ""} onChange={e => setAnswer(cellKey, e.target.value)}
-                          className="w-20 h-14 border-2 border-dashed border-purple-400 rounded-xl text-center text-sm font-bold bg-purple-50 focus:outline-none focus:border-purple-600 cursor-pointer">
-                          <option value="">?</option>
-                          {patternOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                        </select>
-                      ) : (
-                        <input type="text" value={selected || ""} onChange={e => setAnswer(cellKey, e.target.value)}
-                          placeholder="?"
-                          className="w-20 h-14 border-2 border-dashed border-purple-400 rounded-xl text-center text-sm font-bold bg-purple-50 focus:outline-none focus:border-purple-600" />
-                      )}
+                    <div key={cell.id} className="w-20 h-12 border-2 border-slate-300 rounded-xl bg-white flex items-center justify-center text-sm font-bold text-slate-700">
+                      {cell.value}
                     </div>
                   );
-                }
-                return (
-                  <div key={cell.id} className="w-20 h-14 border-2 border-slate-300 rounded-xl bg-white flex items-center justify-center text-sm font-bold text-slate-700">
-                    {cell.value}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+                })}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-      {patternOptions.length > 0 && (
-        <div className="mt-4">
+      )}
+
+      {choices.length > 0 && (
+        <div className="mt-5">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Available Options</p>
           <div className="flex flex-wrap gap-2">
-            {patternOptions.map(opt => (
+            {choices.map(opt => (
               <span key={opt} className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-sm font-medium text-slate-700">{opt}</span>
             ))}
           </div>
@@ -406,6 +490,9 @@ function PSILabQuestion({ data, answer, onChange }: { data: InteractiveData; ans
   const savedData = parseJson<Record<string, string>>(answer, {});
   const setField = (key: string, val: string) => onChange(JSON.stringify({ ...savedData, [key]: val }));
 
+  // Detect seed format (has tasks/variables) vs original format (has steps/dataTable)
+  const isSeedFormat = (data.tasks && data.tasks.length > 0) || (data.variables && data.variables.length > 0);
+
   return (
     <div className="mt-5 space-y-5">
       {/* Lab header */}
@@ -420,7 +507,80 @@ function PSILabQuestion({ data, answer, onChange }: { data: InteractiveData; ans
             <p className="text-sm text-slate-700">{data.hypothesis}</p>
           </div>
         )}
+        {data.scenario && (
+          <div className="bg-white/60 rounded-lg p-3 mt-2">
+            <p className="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-1">Scenario</p>
+            <p className="text-sm text-slate-700">{data.scenario}</p>
+          </div>
+        )}
       </div>
+
+      {/* Variables / Data Table (seed format) */}
+      {isSeedFormat && data.variables && data.variables.length > 0 && (
+        <div>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Experimental Data</p>
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="bg-emerald-50">
+                  {data.variables.map((v, i) => (
+                    <th key={i} className="px-4 py-2.5 text-left font-bold text-emerald-800 border-b border-emerald-200">
+                      {v.name}{v.unit ? ` (${v.unit})` : ""}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.variables[0].values.map((_, rowIdx) => (
+                  <tr key={rowIdx} className={rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                    {data.variables!.map((v, colIdx) => (
+                      <td key={colIdx} className="px-4 py-2 border-b border-slate-100 text-slate-700">
+                        {String(v.values[rowIdx])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Tasks (seed format) */}
+      {isSeedFormat && data.tasks && data.tasks.length > 0 && (
+        <div>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Tasks</p>
+          <div className="space-y-4">
+            {data.tasks.map((task, idx) => (
+              <div key={task.id} className="bg-white border border-slate-200 rounded-xl p-4">
+                <p className="text-sm font-medium text-slate-800 mb-3">{idx + 1}. {task.instruction}</p>
+                {task.type === "multiple_choice" && task.choices ? (
+                  <div className="space-y-2">
+                    {task.choices.map(choice => (
+                      <label key={choice} className={`flex items-center gap-3 p-2.5 rounded-xl border-2 cursor-pointer transition-all ${
+                        savedData[`task_${task.id}`] === choice
+                          ? "border-emerald-500 bg-emerald-50"
+                          : "border-slate-200 hover:border-emerald-300"
+                      }`}>
+                        <input type="radio" name={`psi_${task.id}`} value={choice}
+                          checked={savedData[`task_${task.id}`] === choice}
+                          onChange={() => setField(`task_${task.id}`, choice)}
+                          className="w-4 h-4 accent-emerald-600" />
+                        <span className="text-sm text-slate-700">{choice.replace(/_/g, " ")}</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <textarea value={savedData[`task_${task.id}`] || ""}
+                    onChange={e => setField(`task_${task.id}`, e.target.value)}
+                    rows={2} placeholder="Write your answer here..."
+                    className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 resize-none" />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Steps */}
       {data.steps && data.steps.length > 0 && (
@@ -1174,14 +1334,15 @@ export default function ExamInterface() {
               {currentQ.questionType === "multiple_choice" && options && (
                 <div className="space-y-3 mt-3">
                   {options.map((opt) => {
-                    const isSelected = currentAnswer === opt.label;
+                    const optKey = (opt.label ?? opt.id) as string;
+                    const isSelected = currentAnswer === optKey;
                     return (
-                      <label key={opt.label} className={`flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${isSelected ? "border-blue-600 bg-blue-50 shadow-sm" : "border-slate-200 hover:border-blue-300 hover:bg-blue-50/30"}`}>
-                        <input type="radio" name={`q-${currentQ.id}`} value={opt.label} checked={isSelected}
-                          onChange={() => handleAnswerChange(currentQ.id, opt.label)}
+                      <label key={optKey} className={`flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all ${isSelected ? "border-blue-600 bg-blue-50 shadow-sm" : "border-slate-200 hover:border-blue-300 hover:bg-blue-50/30"}`}>
+                        <input type="radio" name={`q-${currentQ.id}`} value={optKey} checked={isSelected}
+                          onChange={() => handleAnswerChange(currentQ.id, optKey)}
                           className="mt-0.5 w-4 h-4 accent-blue-600 flex-shrink-0" />
                         <div className="flex items-start gap-3">
-                          <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${isSelected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>{opt.label}</span>
+                          <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${isSelected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>{optKey}</span>
                           <span className="text-slate-800 leading-relaxed pt-0.5">{opt.text}</span>
                         </div>
                       </label>

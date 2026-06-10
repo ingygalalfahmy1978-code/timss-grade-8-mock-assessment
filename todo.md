@@ -73,47 +73,47 @@
 ## Phase 10: TIMSS Authenticity Upgrades
 
 ### Schema & Data
-- [ ] Add exam_sessions table (math_session / science_session, 45 min each)
-- [ ] Add exam_blocks table (14 blocks, ~14-15 items each, math/science)
-- [ ] Add block_rotation to class_exam_assignments (each class gets different block combo)
-- [ ] Add science sub-domains: earth_science, biology, chemistry, physics to questions table
-- [ ] Add partial_credit field to questions (max_points: 1 or 2)
-- [ ] Add points_earned to student_answers (0, 1, or 2)
-- [ ] Add session_state to student_exam_attempts (track break between sessions)
-- [ ] Add background_questionnaire_responses table
-- [ ] Seed expanded question bank (60+ questions across blocks, all types)
+- [x] Add exam_sessions table (math_session / science_session, 45 min each)
+- [x] Add exam_blocks table (14 blocks, ~14-15 items each, math/science)
+- [x] Add block_rotation to class_exam_assignments (each class gets different block combo)
+- [x] Add science sub-domains: earth_science, biology, chemistry, physics to questions table
+- [x] Add partial_credit field to questions (max_points: 1 or 2)
+- [x] Add points_earned to student_answers (0, 1, or 2)
+- [x] Add session_state to student_exam_attempts (track break between sessions)
+- [x] Add background_questionnaire_responses table
+- [x] Seed expanded question bank (60+ questions across blocks, all types)
 
 ### New Question Types
-- [ ] drawing_canvas type: student draws on a canvas (geometry, graphs)
-- [ ] pattern_interaction type: student completes/extends a pattern by clicking
-- [ ] psi_lab type: Problem Solving & Inquiry — simulated lab with variables
-- [ ] partial_credit_short_answer type: text answer scored 0/1/2
+- [x] drawing_canvas type: student draws on a canvas (geometry, graphs)
+- [x] pattern_interaction type: student completes/extends a pattern by clicking
+- [x] psi_lab type: Problem Solving & Inquiry — simulated lab with variables
+- [x] partial_credit_short_answer type: text answer scored 0/1/2
 
 ### Exam Flow
-- [ ] Session 1 (Math, 45 min) → Break screen (5 min countdown) → Session 2 (Science, 45 min)
-- [ ] Break screen shows motivational message and countdown
-- [ ] Auto-advance from break to Session 2 when timer ends
-- [ ] Block rotation: assign different question blocks to each student/class
+- [x] Session 1 (Math, 45 min) → Break screen (5 min countdown) → Session 2 (Science, 45 min)
+- [x] Break screen shows motivational message and countdown
+- [x] Auto-advance from break to Session 2 when timer ends
+- [x] Block rotation: assign different question blocks to each student/class
 
 ### Scoring
-- [ ] Partial credit scoring engine (0/1/2 points for constructed response)
-- [ ] Total score = sum of points_earned across all answers
-- [ ] Display score breakdown by session and domain
+- [x] Partial credit scoring engine (0/1/2 points for constructed response)
+- [x] Total score = sum of points_earned across all answers
+- [x] Display score breakdown by session and domain
 
 ### Background Questionnaire
-- [ ] 30-minute questionnaire after exam submission
-- [ ] Questions: home resources, parental education, study habits, attitude toward math/science
-- [ ] Store responses in background_questionnaire_responses table
-- [ ] Questionnaire is optional (can skip) but encouraged
+- [x] 30-minute questionnaire after exam submission
+- [x] Questions: home resources, parental education, study habits, attitude toward math/science
+- [x] Store responses in background_questionnaire_responses table
+- [x] Questionnaire is optional (can skip) but encouraged
 
 ### Admin/Teacher UI
-- [ ] Block management UI: assign blocks to exams
-- [ ] Question type selector includes new types (drawing, pattern, PSI lab)
-- [ ] Science sub-domain selector in question editor
-- [ ] Partial credit max points selector in question editor
+- [x] Block management UI: assign blocks to exams
+- [x] Question type selector includes new types (drawing, pattern, PSI lab)
+- [x] Science sub-domain selector in question editor
+- [x] Partial credit max points selector in question editor
 
 ### Reporting
-- [ ] Score breakdown by session (Math vs Science)
-- [ ] Score breakdown by sub-domain
-- [ ] Partial credit score display in student reports
-- [ ] Background questionnaire summary in class reports
+- [x] Score breakdown by session (Math vs Science)
+- [x] Score breakdown by sub-domain
+- [x] Partial credit score display in student reports
+- [x] Background questionnaire summary in class reports
