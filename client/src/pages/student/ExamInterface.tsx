@@ -1051,7 +1051,39 @@ export default function ExamInterface() {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const startExam = trpc.student.startExam.useMutation();
-  const saveAnswer = trpc.student.saveAnswer.useMutation();
+  const saveAnswer = trpc.student.saveAnswer.useMutation({
+    onError: (err) => {
+      // If the attempt was deleted (e.g. admin reset), reload the exam to get a fresh attempt
+      if (err.data?.code === 'NOT_FOUND') {
+        loadedRef.current = false;
+        setExamData(null);
+        setPhase('loading');
+        startExam.mutateAsync({ examId: Number(examId), classId: Number(classId) })
+          .then((data) => {
+            if ((data as { alreadySubmitted?: boolean }).alreadySubmitted) {
+              navigate(`/student/exam/${examId}/${classId}/complete`);
+              return;
+            }
+            const ed = data as ExamData;
+            setExamData(ed);
+            const savedMap: Record<number, string> = {};
+            const savedFlags = new Set<number>();
+            for (const a of ed.savedAnswers) {
+              if (a.answerGiven) savedMap[a.questionId] = a.answerGiven;
+              if (a.isFlagged) savedFlags.add(a.questionId);
+            }
+            setAnswers(savedMap);
+            setFlagged(savedFlags);
+            const total = (ed.session1Minutes || 45) * 60;
+            setTimeLeft(total);
+            setPhase('session1');
+          })
+          .catch(() => {
+            navigate(`/student/exam/${examId}/${classId}/instructions`);
+          });
+      }
+    }
+  });
   const submitExam = trpc.student.submitExam.useMutation();
   const completeSession1 = trpc.student.completeSession1.useMutation();
   const loadedRef = useRef(false);
