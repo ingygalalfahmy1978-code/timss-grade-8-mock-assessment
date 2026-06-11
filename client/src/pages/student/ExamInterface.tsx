@@ -408,8 +408,10 @@ function PatternQuestion({ data, answer, onChange }: { data: InteractiveData; an
               {data.rows.map((row) => (
                 <tr key={row.id} className="border-b border-slate-200">
                   {row.values.map((val, colIdx) => {
-                    const isBlank = row.blanks?.includes(colIdx);
-                    const cellKey = `${row.id}_${colIdx}`;
+                    // blanks can be numeric indexes OR header name strings
+                    const headerName = data.headers?.[colIdx] ?? String(colIdx);
+                    const isBlank = row.blanks?.includes(colIdx as never) || row.blanks?.includes(headerName as never);
+                    const cellKey = `${row.id}_${headerName}`;
                     return (
                       <td key={colIdx} className="px-4 py-3 text-center bg-white">
                         {isBlank ? renderChoice(cellKey) : (
@@ -693,16 +695,146 @@ function DrawingCanvasQuestion({ data, answer, onChange }: { data: InteractiveDa
   const [color, setColor] = useState("#1e40af");
   const [lineWidth, setLineWidth] = useState(3);
   const lastPos = useRef<{ x: number; y: number } | null>(null);
+  const baseLayerRef = useRef<ImageData | null>(null);
 
-  // Load saved drawing
+  // Draw the base layer (grid, axes, pre-drawn elements)
+  const drawBaseLayer = (canvas: HTMLCanvasElement) => {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const W = canvas.width;
+    const H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, W, H);
+
+    if (data.canvasType === "graph" || data.axes || data.gridLines) {
+      const padding = 50;
+      const gridW = W - padding * 2;
+      const gridH = H - padding * 2;
+      const xSteps = 10;
+      const ySteps = 8;
+      const cellW = gridW / xSteps;
+      const cellH = gridH / ySteps;
+
+      // Grid lines
+      if (data.gridLines !== false) {
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.lineWidth = 0.8;
+        for (let i = 0; i <= xSteps; i++) {
+          const x = padding + i * cellW;
+          ctx.beginPath(); ctx.moveTo(x, padding); ctx.lineTo(x, H - padding); ctx.stroke();
+        }
+        for (let j = 0; j <= ySteps; j++) {
+          const y = padding + j * cellH;
+          ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(W - padding, y); ctx.stroke();
+        }
+      }
+
+      // Axes
+      if (data.axes !== false) {
+        ctx.strokeStyle = "#334155";
+        ctx.lineWidth = 2;
+        // X axis
+        const axisY = padding + (ySteps / 2) * cellH;
+        ctx.beginPath(); ctx.moveTo(padding - 10, axisY); ctx.lineTo(W - padding + 10, axisY); ctx.stroke();
+        // Y axis
+        const axisX = padding + (xSteps / 2) * cellW;
+        ctx.beginPath(); ctx.moveTo(axisX, padding - 10); ctx.lineTo(axisX, H - padding + 10); ctx.stroke();
+        // Arrow heads
+        ctx.fillStyle = "#334155";
+        ctx.beginPath(); ctx.moveTo(W - padding + 10, axisY); ctx.lineTo(W - padding, axisY - 5); ctx.lineTo(W - padding, axisY + 5); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(axisX, padding - 10); ctx.lineTo(axisX - 5, padding); ctx.lineTo(axisX + 5, padding); ctx.fill();
+        // Axis labels
+        ctx.fillStyle = "#475569";
+        ctx.font = "bold 13px sans-serif";
+        ctx.fillText("x", W - padding + 15, axisY + 4);
+        ctx.fillText("y", axisX + 8, padding - 12);
+        // Tick labels
+        ctx.font = "10px sans-serif";
+        ctx.fillStyle = "#64748b";
+        const originX = axisX; const originY = axisY;
+        for (let i = -5; i <= 5; i++) {
+          if (i === 0) continue;
+          const px = originX + i * cellW;
+          ctx.fillText(String(i), px - 5, originY + 15);
+        }
+        for (let j = -4; j <= 4; j++) {
+          if (j === 0) continue;
+          const py = originY - j * cellH;
+          ctx.fillText(String(j), originX - 22, py + 4);
+        }
+      }
+    }
+
+    // Pre-drawn elements (geometry)
+    if (data.preDrawnElements && Array.isArray(data.preDrawnElements)) {
+      for (const el of data.preDrawnElements as Array<{ type: string; vertices?: Array<{x:number;y:number}>; labels?: string[] }>) {
+        if (el.type === "triangle" && el.vertices && el.vertices.length >= 3) {
+          ctx.strokeStyle = "#1e40af";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(el.vertices[0].x, el.vertices[0].y);
+          for (let i = 1; i < el.vertices.length; i++) ctx.lineTo(el.vertices[i].x, el.vertices[i].y);
+          ctx.closePath();
+          ctx.stroke();
+          // Right angle marker
+          const [A, B, C] = el.vertices;
+          ctx.strokeStyle = "#1e40af";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(A.x, A.y - 15, 15, 15);
+          // Labels
+          if (el.labels) {
+            ctx.fillStyle = "#1e40af";
+            ctx.font = "bold 12px sans-serif";
+            if (el.labels[0]) ctx.fillText(el.labels[0], A.x + 18, (A.y + C.y) / 2);
+            if (el.labels[1]) ctx.fillText(el.labels[1], (A.x + B.x) / 2 - 20, B.y + 18);
+            if (el.labels[2]) ctx.fillText(el.labels[2], (B.x + C.x) / 2 + 8, (B.y + C.y) / 2);
+          }
+        }
+      }
+    }
+
+    // Earth cross-section background for diagram type
+    if (data.backgroundImage === "earth_cross_section" || data.canvasType === "diagram") {
+      const cx = W / 2, cy = H / 2;
+      const radii = [40, 90, 150, 200];
+      const colors = ["#f97316", "#ef4444", "#84cc16", "#60a5fa"];
+      const labels = (data as { labels?: string[] }).labels || ["Inner Core", "Outer Core", "Mantle", "Crust"];
+      for (let i = radii.length - 1; i >= 0; i--) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, radii[i], 0, Math.PI * 2);
+        ctx.fillStyle = colors[i] + "40";
+        ctx.fill();
+        ctx.strokeStyle = colors[i];
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#1e293b";
+      ctx.font = "bold 11px sans-serif";
+      ctx.fillText(labels[0] || "Inner Core", cx - 28, cy + 4);
+      ctx.fillText(labels[1] || "Outer Core", cx + 48, cy - 20);
+      ctx.fillText(labels[2] || "Mantle", cx + 95, cy - 40);
+      ctx.fillText(labels[3] || "Crust", cx + 155, cy - 60);
+    }
+
+    // Save base layer so we can restore it under the user's drawing
+    baseLayerRef.current = ctx.getImageData(0, 0, W, H);
+  };
+
+  // Initialize canvas with base layer on mount
   useEffect(() => {
-    if (!canvasRef.current || !answer) return;
-    const img = new Image();
-    img.onload = () => {
-      const ctx = canvasRef.current?.getContext("2d");
-      if (ctx) ctx.drawImage(img, 0, 0);
-    };
-    img.src = answer;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    drawBaseLayer(canvas);
+    // Restore saved drawing on top of base layer
+    if (answer && answer.startsWith("data:image")) {
+      const img = new Image();
+      img.onload = () => {
+        const ctx = canvas.getContext("2d");
+        if (ctx) ctx.drawImage(img, 0, 0);
+      };
+      img.src = answer;
+    }
   }, []);
 
   const getPos = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -757,7 +889,14 @@ function DrawingCanvasQuestion({ data, answer, onChange }: { data: InteractiveDa
   const clearCanvas = () => {
     if (!canvasRef.current) return;
     const ctx = canvasRef.current.getContext("2d");
-    if (ctx) { ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height); }
+    if (ctx) {
+      // Restore base layer (grid/axes/pre-drawn elements)
+      if (baseLayerRef.current) {
+        ctx.putImageData(baseLayerRef.current, 0, 0);
+      } else {
+        drawBaseLayer(canvasRef.current);
+      }
+    }
     onChange("");
   };
 
@@ -799,12 +938,7 @@ function DrawingCanvasQuestion({ data, answer, onChange }: { data: InteractiveDa
       </div>
       {/* Canvas */}
       <div className="border-2 border-slate-300 rounded-xl overflow-hidden bg-white" style={{ touchAction: "none" }}>
-        {data.backgroundImage && (
-          <div className="relative">
-            <img src={data.backgroundImage} alt="Background" className="w-full object-contain max-h-64" />
-          </div>
-        )}
-        <canvas ref={canvasRef} width={800} height={400}
+        <canvas ref={canvasRef} width={800} height={data.height || 400}
           className="w-full cursor-crosshair block"
           style={{ cursor: tool === "eraser" ? "cell" : "crosshair" }}
           onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}

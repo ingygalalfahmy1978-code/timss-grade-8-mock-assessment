@@ -807,7 +807,7 @@ export const appRouter = router({
           options: q.options,
           imageUrl: q.imageUrl,
           interactiveData: q.interactiveData ?? null,
-          session: q.examSession ?? q.subject === "Math" ? "math_session" : "science_session",
+          session: q.examSession ?? (q.subject === "Math" ? "math_session" : "science_session"),
         }));
 
         const session1Questions = safeQuestions.filter((q) => q.session === "math_session");

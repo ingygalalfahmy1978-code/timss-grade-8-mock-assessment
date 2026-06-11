@@ -117,3 +117,8 @@
 - [x] Score breakdown by sub-domain
 - [x] Partial credit score display in student reports
 - [x] Background questionnaire summary in class reports
+
+## Phase 11: Bug Fixes (Round 2)
+- [ ] Drawing canvas questions missing reference graph/diagram to draw on
+- [ ] Science questions appearing in Math session (wrong session assignment in seed data)
+- [ ] Q13 answer selection not working (ordering/drag-drop type issue)
