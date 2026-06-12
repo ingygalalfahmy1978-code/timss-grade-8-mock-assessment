@@ -50,6 +50,8 @@ import {
   getDrawingAnswersForReview,
   updateDrawingAnswerScore,
   recalculateAttemptScore,
+  getStudentAttemptDetail,
+  overrideAnswerScore,
 } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { ENV } from "./_core/env";
@@ -789,6 +791,108 @@ export const appRouter = router({
       .input(z.object({ classId: z.number() }))
       .query(async ({ input }) => {
         return getReportsByClass(input.classId);
+      }),
+
+    // ─── Answer Review & Mark Adjustment ──────────────────────────────
+    getStudentAttemptDetail: teacherOrAdminProcedure
+      .input(z.object({ attemptId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const attempt = await getAttemptById(input.attemptId);
+        if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
+        const cls = await getClassById(attempt.classId);
+        if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
+        return getStudentAttemptDetail(input.attemptId);
+      }),
+
+    overrideAnswerScore: teacherOrAdminProcedure
+      .input(z.object({
+        answerId: z.number(),
+        attemptId: z.number(),
+        pointsEarned: z.number().min(0),
+        isCorrect: z.boolean(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const attempt = await getAttemptById(input.attemptId);
+        if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
+        const cls = await getClassById(attempt.classId);
+        if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
+        await overrideAnswerScore(input.answerId, input.pointsEarned, input.isCorrect);
+        const newTotals = await recalculateAttemptScore(input.attemptId);
+
+        // Regenerate and save the student report so PDF/HTML downloads stay accurate
+        try {
+          const freshAttempt = await getAttemptById(input.attemptId);
+          const student = freshAttempt ? await getPlatformUserById(freshAttempt.studentId) : null;
+          const exam = freshAttempt ? await getExamById(freshAttempt.examId) : null;
+          const examCls = freshAttempt ? await getClassById(freshAttempt.classId) : null;
+          if (freshAttempt && student && exam && examCls) {
+            const answers = await getAnswersForAttempt(input.attemptId);
+            const examData = await getExamWithQuestions(freshAttempt.examId);
+            const questionsList = (examData?.questions ?? []).filter(Boolean).map((q) => ({
+              ...q!,
+              scienceSubDomain: q!.scienceSubDomain ?? null,
+              maxPoints: q!.maxPoints ?? 1,
+              session: q!.session ?? null,
+            }));
+            const scoredAnswers = answers.map((a) => ({
+              questionId: a.questionId,
+              answerGiven: a.answerGiven ?? null,
+              isCorrect: a.isCorrect ?? null,
+              pointsEarned: a.pointsEarned ?? 0,
+            }));
+            const reportData = generateReportData(
+              { id: student.id, name: student.name },
+              { id: exam.id, name: exam.name },
+              examCls.name,
+              {
+                totalScore: newTotals?.totalScore ?? freshAttempt.totalScore ?? 0,
+                totalMaxPoints: newTotals?.totalMaxPoints ?? freshAttempt.totalMaxPoints ?? 0,
+                totalQuestions: freshAttempt.totalQuestions ?? 0,
+                mathScore: newTotals?.mathScore ?? freshAttempt.mathScore ?? 0,
+                mathMaxPoints: newTotals?.mathMaxPoints ?? freshAttempt.mathMaxPoints ?? 0,
+                mathTotal: freshAttempt.mathTotal ?? 0,
+                scienceScore: newTotals?.scienceScore ?? freshAttempt.scienceScore ?? 0,
+                scienceMaxPoints: newTotals?.scienceMaxPoints ?? freshAttempt.scienceMaxPoints ?? 0,
+                scienceTotal: freshAttempt.scienceTotal ?? 0,
+                domainBreakdown: freshAttempt.domainBreakdown,
+                timeSpentSeconds: freshAttempt.timeSpentSeconds ?? 0,
+                session1TimeSpentSeconds: freshAttempt.session1TimeSpentSeconds ?? null,
+                session2TimeSpentSeconds: freshAttempt.session2TimeSpentSeconds ?? null,
+                submittedAt: freshAttempt.submittedAt ?? new Date(),
+              },
+              scoredAnswers,
+              questionsList
+                .filter((q) => q.id != null && q.subject != null && q.contentDomain != null)
+                .map((q) => ({
+                  id: q.id!,
+                  subject: q.subject!,
+                  contentDomain: q.contentDomain!,
+                  scienceSubDomain: q.scienceSubDomain ?? null,
+                  cognitiveDomain: q.cognitiveDomain!,
+                  difficulty: q.difficulty!,
+                  questionType: q.questionType!,
+                  correctAnswer: q.correctAnswer!,
+                  maxPoints: q.maxPoints ?? 1,
+                  session: q.session ?? null,
+                }))
+            );
+            await saveStudentReport({
+              attemptId: input.attemptId,
+              studentId: freshAttempt.studentId,
+              examId: freshAttempt.examId,
+              classId: freshAttempt.classId,
+              reportData,
+            });
+          }
+        } catch (reportErr) {
+          console.error("[OverrideScore] Failed to regenerate report:", reportErr);
+        }
+
+        return { success: true, newTotals };
       }),
 
     // ─── Drawing Review ───────────────────────────────────────────────

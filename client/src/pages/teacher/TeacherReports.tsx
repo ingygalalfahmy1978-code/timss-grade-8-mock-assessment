@@ -50,6 +50,13 @@ export default function TeacherReports() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => navigate("/teacher/answer-review")}
+              className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              <Pencil className="w-4 h-4" />
+              Review Answers
+            </button>
+            <button
               onClick={() => navigate("/teacher/drawing-review")}
               className="flex items-center gap-2 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors"
             >

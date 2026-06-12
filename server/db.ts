@@ -753,3 +753,65 @@ export async function recalculateAttemptScore(attemptId: number) {
 
   return { totalScore, totalMaxPoints, mathScore, mathMaxPoints, scienceScore, scienceMaxPoints };
 }
+
+export async function getStudentAttemptDetail(attemptId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const attempt = await db
+    .select()
+    .from(studentExamAttempts)
+    .where(eq(studentExamAttempts.id, attemptId))
+    .limit(1);
+  if (!attempt[0]) return null;
+
+  const answers = await db
+    .select()
+    .from(studentAnswers)
+    .where(eq(studentAnswers.attemptId, attemptId));
+
+  // Get all questions for this exam
+  const examQs = await db
+    .select()
+    .from(examQuestions)
+    .where(eq(examQuestions.examId, attempt[0].examId))
+    .orderBy(examQuestions.orderIndex);
+
+  const questionDetails = [];
+  for (const eqRow of examQs) {
+    const q = await db.select().from(questions).where(eq(questions.id, eqRow.questionId)).limit(1);
+    if (!q[0]) continue;
+    const ans = answers.find((a) => a.questionId === q[0].id);
+    questionDetails.push({
+      questionId: q[0].id,
+      questionText: q[0].questionText,
+      questionType: q[0].questionType,
+      subject: q[0].subject,
+      contentDomain: q[0].contentDomain,
+      correctAnswer: q[0].correctAnswer,
+      options: q[0].options,
+      interactiveData: q[0].interactiveData,
+      maxPoints: q[0].maxPoints ?? 1,
+      session: q[0].session,
+      answerId: ans?.id ?? null,
+      answerGiven: ans?.answerGiven ?? null,
+      isCorrect: ans?.isCorrect ?? null,
+      pointsEarned: ans?.pointsEarned ?? 0,
+      isFlagged: ans?.isFlagged ?? false,
+    });
+  }
+
+  return {
+    attempt: attempt[0],
+    questions: questionDetails,
+  };
+}
+
+export async function overrideAnswerScore(answerId: number, pointsEarned: number, isCorrect: boolean) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(studentAnswers)
+    .set({ pointsEarned, isCorrect, updatedAt: new Date() })
+    .where(eq(studentAnswers.id, answerId));
+}

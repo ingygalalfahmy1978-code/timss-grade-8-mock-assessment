@@ -138,3 +138,18 @@
 - [x] Point toggle/removal in Plot Point mode (click existing point to remove it)
 - [x] After drawing review, regenerate student_reports.reportData so PDFs stay accurate
 - [x] 24 new scoring unit tests for all question types (40 total tests passing)
+
+## Phase 13: TIMSS Standard Alignment, Teacher Review, Bug Fixes & Question Import
+- [x] Research standard TIMSS Grade 8 structure (question count per booklet/session)
+- [x] Fix Mock 2 so student answers are displayed correctly in review/report flows (was not assigned to class 8B)
+- [x] Assign all 6 mocks to both classes (8A + 8B) and activate them
+- [x] Deactivated exam filter already works correctly (server skips isActive=false)
+- [x] Build teacher Answer Review page at /teacher/answer-review with Q-by-Q inspection
+- [x] Add overrideAnswerScore procedure for teachers to adjust any answer mark
+- [x] Add getStudentAttemptDetail procedure showing all Q+A with correct answers
+- [x] Add Review Answers button to TeacherReports page header
+- [x] After mark override, recalculate attempt totals automatically
+- [x] Extract and seed 62 questions from TIMSS Algebra, Geometry, Statistics, Decimals, FDP booklets
+- [x] Extract and seed questions from Grade 8 Biology, Chemistry, Physics workbooks
+- [x] All 6 mocks now have 56-61 questions each (distributed from booklets)
+- [x] All 40 tests passing after changes
