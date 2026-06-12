@@ -1,8 +1,9 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
 import { usePlatformAuth } from "@/hooks/usePlatformAuth";
-import { Download } from "lucide-react";
+import { Download, Pencil } from "lucide-react";
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 type ReportData = {
@@ -37,6 +38,8 @@ export default function TeacherReports() {
     window.open(`/api/reports/class/${selectedClassId}/pdf`, "_blank");
   };
 
+  const [, navigate] = useLocation();
+
   return (
     <PlatformLayout title="Reports">
       <div className="space-y-6">
@@ -45,15 +48,24 @@ export default function TeacherReports() {
             <h2 className="text-xl font-bold text-gray-900">Student Reports</h2>
             <p className="text-sm text-gray-500 mt-0.5">View and download detailed assessment reports</p>
           </div>
-          {selectedClassId && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleDownloadClassReport}
-              className="flex items-center gap-2 px-3 py-1.5 bg-[oklch(0.42_0.14_240)] text-white rounded-lg text-sm font-medium"
+              onClick={() => navigate("/teacher/drawing-review")}
+              className="flex items-center gap-2 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors"
             >
-              <Download className="w-4 h-4" />
-              Download Class Report
+              <Pencil className="w-4 h-4" />
+              Review Drawings
             </button>
-          )}
+            {selectedClassId && (
+              <button
+                onClick={handleDownloadClassReport}
+                className="flex items-center gap-2 px-3 py-1.5 bg-[oklch(0.42_0.14_240)] text-white rounded-lg text-sm font-medium"
+              >
+                <Download className="w-4 h-4" />
+                Download Class Report
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Class selector */}

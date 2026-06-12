@@ -122,3 +122,19 @@
 - [x] Drawing canvas questions missing reference graph/diagram to draw on
 - [x] Science questions appearing in Math session (fixed operator precedence bug in server routers.ts)
 - [x] Q13 answer selection not working (fixed pattern table blank detection to use header names)
+
+## Phase 12: Drawing Canvas & Scoring Accuracy
+- [x] Fix drawing canvas: visible coordinate grid with labeled axes, tick marks, and numbered gridlines
+- [x] Add point-plotting mode: click on grid to place/remove points with snap-to-grid
+- [x] Fix auto-scoring for pattern_interaction (table format with named blanks)
+- [x] Fix auto-scoring for matching questions (compare selected pairs to correct pairs)
+- [x] Fix auto-scoring for ordering/drag-drop questions (compare order to correct order)
+- [x] Fix auto-scoring for PSI lab tasks (compare task answers to correct answers)
+- [x] Fix auto-scoring for short_answer / partial_credit_short_answer (keyword matching 0/1/2)
+- [x] Build teacher drawing review interface at /teacher/drawing-review (show canvas image, award 0/1/2 points)
+- [x] Update student attempt totals after teacher drawing review (recalculateAttemptScore)
+- [x] Ensure student reports accurately reflect all scored answers
+- [x] Admin Reset All Student Data button in AdminDashboard (with confirmation step)
+- [x] Point toggle/removal in Plot Point mode (click existing point to remove it)
+- [x] After drawing review, regenerate student_reports.reportData so PDFs stay accurate
+- [x] 24 new scoring unit tests for all question types (40 total tests passing)

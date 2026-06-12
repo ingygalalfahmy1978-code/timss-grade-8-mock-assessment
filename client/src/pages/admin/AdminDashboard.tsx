@@ -1,8 +1,55 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
 import { usePlatformAuth } from "@/hooks/usePlatformAuth";
-import { BookOpen, ClipboardList, GraduationCap, Users } from "lucide-react";
+import { BookOpen, ClipboardList, GraduationCap, Users, Trash2 } from "lucide-react";
 import { Link } from "wouter";
+import { useState } from "react";
+import { toast } from "sonner";
+
+function ResetStudentDataButton() {
+  const [confirming, setConfirming] = useState(false);
+  const resetMutation = trpc.admin.resetAllStudentData.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+      setConfirming(false);
+    },
+    onError: (err) => {
+      toast.error(`Reset failed: ${err.message}`);
+      setConfirming(false);
+    },
+  });
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-red-700 font-medium">Are you sure? This cannot be undone.</span>
+        <button
+          onClick={() => resetMutation.mutate()}
+          disabled={resetMutation.isPending}
+          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+        >
+          {resetMutation.isPending ? "Resetting..." : "Yes, Reset All"}
+        </button>
+        <button
+          onClick={() => setConfirming(false)}
+          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setConfirming(true)}
+      className="flex items-center gap-2 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-semibold rounded-lg transition-colors"
+    >
+      <Trash2 className="w-3.5 h-3.5" />
+      Reset All Student Data
+    </button>
+  );
+}
 
 export default function AdminDashboard() {
   const { user } = usePlatformAuth();
@@ -75,6 +122,20 @@ export default function AdminDashboard() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Danger Zone: Reset All Student Data */}
+        <div className="bg-white rounded-xl border border-red-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-red-100 bg-red-50">
+            <h3 className="font-semibold text-red-800 flex items-center gap-2"><Trash2 className="w-4 h-4" /> Danger Zone</h3>
+          </div>
+          <div className="px-6 py-5 flex items-center justify-between">
+            <div>
+              <div className="font-medium text-gray-900 text-sm">Reset All Student Exam Data</div>
+              <div className="text-xs text-gray-500 mt-0.5">Deletes all attempts, answers, reports, and questionnaire responses. This cannot be undone.</div>
+            </div>
+            <ResetStudentDataButton />
           </div>
         </div>
 

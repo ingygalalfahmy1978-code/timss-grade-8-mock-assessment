@@ -651,3 +651,105 @@ export async function getReportsByStudent(studentId: number) {
     .from(studentReports)
     .where(eq(studentReports.studentId, studentId));
 }
+
+// ─── Drawing Canvas Review ────────────────────────────────────────────────────
+export async function getDrawingAnswersForReview(classId: number, examId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  // Get all submitted attempts for this class+exam
+  const attempts = await db
+    .select()
+    .from(studentExamAttempts)
+    .where(and(eq(studentExamAttempts.classId, classId), eq(studentExamAttempts.examId, examId), eq(studentExamAttempts.status, "submitted")));
+  if (attempts.length === 0) return [];
+  const attemptIds = attempts.map((a) => a.id);
+  // Get all drawing_canvas answers
+  // Filter drawing_canvas answers by joining with questions table
+  const allAnswers = await db
+    .select()
+    .from(studentAnswers)
+    .where(inArray(studentAnswers.attemptId, attemptIds));
+  // Get question types for these answers
+  const questionIds = Array.from(new Set(allAnswers.map((a) => a.questionId)));
+  const questionTypes = questionIds.length > 0
+    ? await db.select({ id: questions.id, questionType: questions.questionType }).from(questions).where(inArray(questions.id, questionIds))
+    : [];
+  const drawingQuestionIds = new Set(questionTypes.filter((q) => q.questionType === "drawing_canvas").map((q) => q.id));
+  const drawingAnswers = allAnswers.filter((a) => drawingQuestionIds.has(a.questionId));
+  // Enrich with question text and student name
+  const result = [];
+  for (const ans of drawingAnswers) {
+    const q = await db.select().from(questions).where(eq(questions.id, ans.questionId)).limit(1);
+    const attempt = attempts.find((a) => a.id === ans.attemptId);
+    const student = attempt
+      ? await db.select().from(platformUsers).where(eq(platformUsers.id, attempt.studentId)).limit(1)
+      : [];
+    result.push({
+      answerId: ans.id,
+      attemptId: ans.attemptId,
+      questionId: ans.questionId,
+      questionText: q[0]?.questionText ?? "Unknown question",
+      maxPoints: q[0]?.maxPoints ?? 1,
+      answerGiven: ans.answerGiven,
+      pointsEarned: ans.pointsEarned ?? 0,
+      reviewedAt: ans.updatedAt ?? null,
+      studentName: student[0]?.name ?? "Unknown student",
+      studentId: attempt?.studentId ?? 0,
+    });
+  }
+  return result;
+}
+
+export async function updateDrawingAnswerScore(answerId: number, pointsEarned: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(studentAnswers)
+    .set({ pointsEarned, isCorrect: pointsEarned > 0, updatedAt: new Date() })
+    .where(eq(studentAnswers.id, answerId));
+}
+
+export async function recalculateAttemptScore(attemptId: number) {
+  const db = await getDb();
+  if (!db) return;
+  const answers = await db
+    .select()
+    .from(studentAnswers)
+    .where(eq(studentAnswers.attemptId, attemptId));
+  const attempt = await db
+    .select()
+    .from(studentExamAttempts)
+    .where(eq(studentExamAttempts.id, attemptId))
+    .limit(1);
+  if (!attempt[0]) return;
+
+  let totalScore = 0;
+  let totalMaxPoints = 0;
+  let mathScore = 0;
+  let mathMaxPoints = 0;
+  let scienceScore = 0;
+  let scienceMaxPoints = 0;
+
+  for (const ans of answers) {
+    const q = await db.select().from(questions).where(eq(questions.id, ans.questionId)).limit(1);
+    if (!q[0]) continue;
+    const pts = ans.pointsEarned ?? 0;
+    const maxPts = q[0].maxPoints ?? 1;
+    totalScore += pts;
+    totalMaxPoints += maxPts;
+    if (q[0].subject === "Math") {
+      mathScore += pts;
+      mathMaxPoints += maxPts;
+    } else {
+      scienceScore += pts;
+      scienceMaxPoints += maxPts;
+    }
+  }
+
+  await db
+    .update(studentExamAttempts)
+    .set({ totalScore, totalMaxPoints, mathScore, mathMaxPoints, scienceScore, scienceMaxPoints })
+    .where(eq(studentExamAttempts.id, attemptId));
+
+  return { totalScore, totalMaxPoints, mathScore, mathMaxPoints, scienceScore, scienceMaxPoints };
+}

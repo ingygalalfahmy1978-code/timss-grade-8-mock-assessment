@@ -691,11 +691,19 @@ function PSILabQuestion({ data, answer, onChange }: { data: InteractiveData; ans
 function DrawingCanvasQuestion({ data, answer, onChange }: { data: InteractiveData; answer: string; onChange: (v: string) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [tool, setTool] = useState<"pen" | "eraser">("pen");
+  const [tool, setTool] = useState<"pen" | "eraser" | "point">("pen");
   const [color, setColor] = useState("#1e40af");
   const [lineWidth, setLineWidth] = useState(3);
   const lastPos = useRef<{ x: number; y: number } | null>(null);
   const baseLayerRef = useRef<ImageData | null>(null);
+  const userLayerRef = useRef<ImageData | null>(null);
+  const isGraphMode = !!(data.canvasType === "graph" || data.axes || data.gridLines);
+  // Grid geometry constants (must match drawBaseLayer)
+  const PADDING = 60;
+  const X_STEPS = 10;
+  const Y_STEPS = 10;
+  const CANVAS_W = 800;
+  const CANVAS_H = 500;
 
   // Draw the base layer (grid, axes, pre-drawn elements)
   const drawBaseLayer = (canvas: HTMLCanvasElement) => {
@@ -708,62 +716,72 @@ function DrawingCanvasQuestion({ data, answer, onChange }: { data: InteractiveDa
     ctx.fillRect(0, 0, W, H);
 
     if (data.canvasType === "graph" || data.axes || data.gridLines) {
-      const padding = 50;
+      const padding = PADDING;
       const gridW = W - padding * 2;
       const gridH = H - padding * 2;
-      const xSteps = 10;
-      const ySteps = 8;
+      const xSteps = X_STEPS;
+      const ySteps = Y_STEPS;
       const cellW = gridW / xSteps;
       const cellH = gridH / ySteps;
+      const originX = padding + (xSteps / 2) * cellW;
+      const originY = padding + (ySteps / 2) * cellH;
 
-      // Grid lines
-      if (data.gridLines !== false) {
-        ctx.strokeStyle = "#e2e8f0";
-        ctx.lineWidth = 0.8;
-        for (let i = 0; i <= xSteps; i++) {
-          const x = padding + i * cellW;
-          ctx.beginPath(); ctx.moveTo(x, padding); ctx.lineTo(x, H - padding); ctx.stroke();
-        }
-        for (let j = 0; j <= ySteps; j++) {
-          const y = padding + j * cellH;
-          ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(W - padding, y); ctx.stroke();
-        }
+      // Minor grid lines
+      ctx.strokeStyle = "#cbd5e1";
+      ctx.lineWidth = 0.5;
+      for (let i = 0; i <= xSteps; i++) {
+        const x = padding + i * cellW;
+        ctx.beginPath(); ctx.moveTo(x, padding); ctx.lineTo(x, H - padding); ctx.stroke();
+      }
+      for (let j = 0; j <= ySteps; j++) {
+        const y = padding + j * cellH;
+        ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(W - padding, y); ctx.stroke();
       }
 
-      // Axes
-      if (data.axes !== false) {
-        ctx.strokeStyle = "#334155";
-        ctx.lineWidth = 2;
-        // X axis
-        const axisY = padding + (ySteps / 2) * cellH;
-        ctx.beginPath(); ctx.moveTo(padding - 10, axisY); ctx.lineTo(W - padding + 10, axisY); ctx.stroke();
-        // Y axis
-        const axisX = padding + (xSteps / 2) * cellW;
-        ctx.beginPath(); ctx.moveTo(axisX, padding - 10); ctx.lineTo(axisX, H - padding + 10); ctx.stroke();
-        // Arrow heads
-        ctx.fillStyle = "#334155";
-        ctx.beginPath(); ctx.moveTo(W - padding + 10, axisY); ctx.lineTo(W - padding, axisY - 5); ctx.lineTo(W - padding, axisY + 5); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(axisX, padding - 10); ctx.lineTo(axisX - 5, padding); ctx.lineTo(axisX + 5, padding); ctx.fill();
-        // Axis labels
-        ctx.fillStyle = "#475569";
-        ctx.font = "bold 13px sans-serif";
-        ctx.fillText("x", W - padding + 15, axisY + 4);
-        ctx.fillText("y", axisX + 8, padding - 12);
-        // Tick labels
-        ctx.font = "10px sans-serif";
-        ctx.fillStyle = "#64748b";
-        const originX = axisX; const originY = axisY;
-        for (let i = -5; i <= 5; i++) {
-          if (i === 0) continue;
-          const px = originX + i * cellW;
-          ctx.fillText(String(i), px - 5, originY + 15);
-        }
-        for (let j = -4; j <= 4; j++) {
-          if (j === 0) continue;
-          const py = originY - j * cellH;
-          ctx.fillText(String(j), originX - 22, py + 4);
-        }
+      // Axes (bold)
+      ctx.strokeStyle = "#1e293b";
+      ctx.lineWidth = 2.5;
+      // X axis
+      ctx.beginPath(); ctx.moveTo(padding - 12, originY); ctx.lineTo(W - padding + 12, originY); ctx.stroke();
+      // Y axis
+      ctx.beginPath(); ctx.moveTo(originX, padding - 12); ctx.lineTo(originX, H - padding + 12); ctx.stroke();
+
+      // Arrow heads
+      ctx.fillStyle = "#1e293b";
+      ctx.beginPath(); ctx.moveTo(W - padding + 12, originY); ctx.lineTo(W - padding + 2, originY - 6); ctx.lineTo(W - padding + 2, originY + 6); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(originX, padding - 12); ctx.lineTo(originX - 6, padding - 2); ctx.lineTo(originX + 6, padding - 2); ctx.fill();
+
+      // Axis labels
+      ctx.fillStyle = "#1e293b";
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillText("x", W - padding + 18, originY + 5);
+      ctx.fillText("y", originX + 10, padding - 14);
+
+      // Tick marks and number labels
+      ctx.font = "bold 11px sans-serif";
+      ctx.fillStyle = "#334155";
+      ctx.textAlign = "center";
+      for (let i = -xSteps / 2; i <= xSteps / 2; i++) {
+        if (i === 0) continue;
+        const px = originX + i * cellW;
+        // Tick
+        ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(px, originY - 5); ctx.lineTo(px, originY + 5); ctx.stroke();
+        // Label
+        ctx.fillText(String(i), px, originY + 18);
       }
+      ctx.textAlign = "right";
+      for (let j = -ySteps / 2; j <= ySteps / 2; j++) {
+        if (j === 0) continue;
+        const py = originY - j * cellH;
+        ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(originX - 5, py); ctx.lineTo(originX + 5, py); ctx.stroke();
+        ctx.fillText(String(j), originX - 8, py + 4);
+      }
+      // Origin label
+      ctx.textAlign = "right";
+      ctx.fillText("0", originX - 8, originY + 18);
+      ctx.textAlign = "left"; // reset
     }
 
     // Pre-drawn elements (geometry)
@@ -837,6 +855,18 @@ function DrawingCanvasQuestion({ data, answer, onChange }: { data: InteractiveDa
     }
   }, []);
 
+  // Snap a canvas coordinate to the nearest grid intersection
+  const snapToGrid = (cx: number, cy: number) => {
+    if (!isGraphMode) return { x: cx, y: cy };
+    const gridW = CANVAS_W - PADDING * 2;
+    const gridH = CANVAS_H - PADDING * 2;
+    const cellW = gridW / X_STEPS;
+    const cellH = gridH / Y_STEPS;
+    const snappedX = Math.round((cx - PADDING) / cellW) * cellW + PADDING;
+    const snappedY = Math.round((cy - PADDING) / cellH) * cellH + PADDING;
+    return { x: snappedX, y: snappedY };
+  };
+
   const getPos = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
@@ -850,8 +880,54 @@ function DrawingCanvasQuestion({ data, answer, onChange }: { data: InteractiveDa
     return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
   };
 
+  const plotPoint = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const raw = getPos(e);
+    if (!raw) return;
+    const pos = isGraphMode ? snapToGrid(raw.x, raw.y) : raw;
+    const POINT_RADIUS = 6;
+    const HIT_RADIUS = 10; // slightly larger than drawn radius for easier clicking
+    // Check if there is already a point drawn at this location by sampling pixels
+    // We detect by checking if the pixel at the snapped position is non-white (i.e., a point exists)
+    const imageData = ctx.getImageData(pos.x - HIT_RADIUS, pos.y - HIT_RADIUS, HIT_RADIUS * 2, HIT_RADIUS * 2);
+    let hasPoint = false;
+    for (let i = 0; i < imageData.data.length; i += 4) {
+      const r = imageData.data[i], g = imageData.data[i + 1], b = imageData.data[i + 2], a = imageData.data[i + 3];
+      // A non-white, non-transparent pixel that is not a grid line (grid lines are light gray #cbd5e1)
+      if (a > 200 && !(r > 240 && g > 240 && b > 240) && !(r > 190 && g > 200 && b > 220 && r < 220)) {
+        hasPoint = true;
+        break;
+      }
+    }
+    if (hasPoint && baseLayerRef.current) {
+      // Erase the point by restoring base layer in a circle
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, POINT_RADIUS + 4, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.putImageData(baseLayerRef.current, 0, 0);
+      ctx.restore();
+    } else {
+      // Draw a filled circle at the point
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, POINT_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    // Save
+    onChange(canvas.toDataURL("image/png"));
+  };
+
   const startDraw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     e.preventDefault();
+    if (tool === "point") { plotPoint(e); return; }
     const pos = getPos(e);
     if (!pos) return;
     setIsDrawing(true);
@@ -860,19 +936,39 @@ function DrawingCanvasQuestion({ data, answer, onChange }: { data: InteractiveDa
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     e.preventDefault();
+    if (tool === "point") return; // points are placed on click, not drag
     if (!isDrawing || !canvasRef.current) return;
     const ctx = canvasRef.current.getContext("2d");
     if (!ctx) return;
     const pos = getPos(e);
     if (!pos || !lastPos.current) return;
-    ctx.beginPath();
-    ctx.moveTo(lastPos.current.x, lastPos.current.y);
-    ctx.lineTo(pos.x, pos.y);
-    ctx.strokeStyle = tool === "eraser" ? "#ffffff" : color;
-    ctx.lineWidth = tool === "eraser" ? lineWidth * 4 : lineWidth;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.stroke();
+    if (tool === "eraser") {
+      // Eraser: restore base layer pixels in a circle around the cursor
+      const r = lineWidth * 5;
+      if (baseLayerRef.current) {
+        // Composite: draw white circle then re-stamp base layer through a clip
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.putImageData(baseLayerRef.current, 0, 0);
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+      }
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(lastPos.current.x, lastPos.current.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.stroke();
+    }
     lastPos.current = pos;
   };
 
@@ -882,6 +978,7 @@ function DrawingCanvasQuestion({ data, answer, onChange }: { data: InteractiveDa
     lastPos.current = null;
     // Save canvas as data URL
     if (canvasRef.current) {
+      userLayerRef.current = canvasRef.current.getContext("2d")?.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height) ?? null;
       onChange(canvasRef.current.toDataURL("image/png"));
     }
   };
@@ -909,6 +1006,11 @@ function DrawingCanvasQuestion({ data, answer, onChange }: { data: InteractiveDa
           <p className="text-sm text-amber-800"><strong>Drawing task:</strong> {data.canvasPrompt}</p>
         </div>
       )}
+      {isGraphMode && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-3 text-xs text-blue-800">
+          <strong>Tip:</strong> Use <strong>Plot Point</strong> mode to click exactly on grid intersections. Switch to <strong>Pen</strong> to draw lines connecting the points.
+        </div>
+      )}
       {/* Toolbar */}
       <div className="flex items-center gap-3 mb-3 flex-wrap">
         <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
@@ -916,6 +1018,12 @@ function DrawingCanvasQuestion({ data, answer, onChange }: { data: InteractiveDa
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${tool === "pen" ? "bg-white shadow text-blue-700" : "text-slate-600 hover:text-slate-800"}`}>
             <Pencil size={12} /> Pen
           </button>
+          {isGraphMode && (
+            <button onClick={() => setTool("point")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${tool === "point" ? "bg-white shadow text-green-700" : "text-slate-600 hover:text-slate-800"}`}>
+              <Zap size={12} /> Plot Point
+            </button>
+          )}
           <button onClick={() => setTool("eraser")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${tool === "eraser" ? "bg-white shadow text-slate-700" : "text-slate-600 hover:text-slate-800"}`}>
             <Eraser size={12} /> Eraser
@@ -938,9 +1046,9 @@ function DrawingCanvasQuestion({ data, answer, onChange }: { data: InteractiveDa
       </div>
       {/* Canvas */}
       <div className="border-2 border-slate-300 rounded-xl overflow-hidden bg-white" style={{ touchAction: "none" }}>
-        <canvas ref={canvasRef} width={800} height={data.height || 400}
+        <canvas ref={canvasRef} width={CANVAS_W} height={isGraphMode ? CANVAS_H : (data.height || 400)}
           className="w-full cursor-crosshair block"
-          style={{ cursor: tool === "eraser" ? "cell" : "crosshair" }}
+          style={{ cursor: tool === "eraser" ? "cell" : tool === "point" ? "crosshair" : "crosshair" }}
           onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
           onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw} />
       </div>

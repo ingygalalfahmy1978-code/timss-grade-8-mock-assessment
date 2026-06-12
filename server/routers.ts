@@ -47,6 +47,9 @@ import {
   updateExam,
   updatePlatformUser,
   updateQuestion,
+  getDrawingAnswersForReview,
+  updateDrawingAnswerScore,
+  recalculateAttemptScore,
 } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { ENV } from "./_core/env";
@@ -118,27 +121,83 @@ function scoreAnswer(
 
   if (questionType === "drag_drop" || questionType === "matching") {
     try {
-      const given = JSON.parse(answerGiven);
-      const expected = JSON.parse(correctAnswer);
-      const correct = JSON.stringify(given) === JSON.stringify(expected);
-      return { isCorrect: correct, pointsEarned: correct ? maxPoints : 0 };
+      const given = JSON.parse(answerGiven) as Record<string, string>;
+      const expected = JSON.parse(correctAnswer) as Record<string, string>;
+      // Order-independent comparison: check every expected key-value pair
+      const expectedKeys = Object.keys(expected);
+      if (expectedKeys.length === 0) return { isCorrect: false, pointsEarned: 0 };
+      let correctPairs = 0;
+      for (const key of expectedKeys) {
+        if (given[key]?.toString().trim().toLowerCase() === expected[key]?.toString().trim().toLowerCase()) {
+          correctPairs++;
+        }
+      }
+      const allCorrect = correctPairs === expectedKeys.length;
+      if (maxPoints <= 1) return { isCorrect: allCorrect, pointsEarned: allCorrect ? maxPoints : 0 };
+      // Partial credit for 2-point questions
+      if (allCorrect) return { isCorrect: true, pointsEarned: 2 };
+      if (correctPairs >= Math.ceil(expectedKeys.length / 2)) return { isCorrect: false, pointsEarned: 1 };
+      return { isCorrect: false, pointsEarned: 0 };
     } catch {
       return { isCorrect: false, pointsEarned: 0 };
     }
   }
 
   if (questionType === "ordering") {
-    const given = answerGiven.trim().toLowerCase();
-    const expected = correctAnswer.trim().toLowerCase();
-    const correct = given === expected;
-    return { isCorrect: correct, pointsEarned: correct ? maxPoints : 0 };
+    try {
+      // Both sides are JSON arrays of IDs
+      let givenArr: string[];
+      let expectedArr: string[];
+      try {
+        givenArr = JSON.parse(answerGiven);
+        expectedArr = JSON.parse(correctAnswer);
+      } catch {
+        // Fallback: plain string comparison
+        const g = answerGiven.trim().toLowerCase();
+        const e = correctAnswer.trim().toLowerCase();
+        return { isCorrect: g === e, pointsEarned: g === e ? maxPoints : 0 };
+      }
+      if (!Array.isArray(givenArr) || !Array.isArray(expectedArr)) {
+        return { isCorrect: false, pointsEarned: 0 };
+      }
+      const correct = givenArr.length === expectedArr.length &&
+        givenArr.every((v, i) => v?.toString().trim().toLowerCase() === expectedArr[i]?.toString().trim().toLowerCase());
+      return { isCorrect: correct, pointsEarned: correct ? maxPoints : 0 };
+    } catch {
+      return { isCorrect: false, pointsEarned: 0 };
+    }
   }
 
   if (questionType === "pattern_interaction") {
-    const given = answerGiven.trim().toLowerCase();
-    const expected = correctAnswer.trim().toLowerCase();
-    const correct = given === expected;
-    return { isCorrect: correct, pointsEarned: correct ? maxPoints : 0 };
+    try {
+      let given: Record<string, string>;
+      let expected: Record<string, string>;
+      try {
+        given = JSON.parse(answerGiven);
+        expected = JSON.parse(correctAnswer);
+      } catch {
+        // Fallback: plain string comparison
+        const g = answerGiven.trim().toLowerCase();
+        const e = correctAnswer.trim().toLowerCase();
+        return { isCorrect: g === e, pointsEarned: g === e ? maxPoints : 0 };
+      }
+      const expectedKeys = Object.keys(expected);
+      if (expectedKeys.length === 0) return { isCorrect: false, pointsEarned: 0 };
+      let correctBlanks = 0;
+      for (const key of expectedKeys) {
+        if (given[key]?.toString().trim().toLowerCase() === expected[key]?.toString().trim().toLowerCase()) {
+          correctBlanks++;
+        }
+      }
+      const allCorrect = correctBlanks === expectedKeys.length;
+      if (maxPoints <= 1) return { isCorrect: allCorrect, pointsEarned: allCorrect ? maxPoints : 0 };
+      // Partial credit for 2-point questions
+      if (allCorrect) return { isCorrect: true, pointsEarned: 2 };
+      if (correctBlanks >= Math.ceil(expectedKeys.length / 2)) return { isCorrect: false, pointsEarned: 1 };
+      return { isCorrect: false, pointsEarned: 0 };
+    } catch {
+      return { isCorrect: false, pointsEarned: 0 };
+    }
   }
 
   if (questionType === "psi_lab") {
@@ -625,6 +684,20 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return getAttemptsByClass(input.classId);
       }),
+
+    // Reset all student exam data (attempts, answers, reports, questionnaire responses)
+    resetAllStudentData: adminProcedure
+      .mutation(async () => {
+        const db = await (await import("./db")).getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        const { studentAnswers, studentExamAttempts, studentReports, backgroundQuestionnaireResponses } = await import("../drizzle/schema");
+        // Delete in dependency order
+        await db.delete(backgroundQuestionnaireResponses);
+        await db.delete(studentReports);
+        await db.delete(studentAnswers);
+        await db.delete(studentExamAttempts);
+        return { success: true, message: "All student exam data has been cleared." };
+      }),
   }),
 
   // ─── Teacher ──────────────────────────────────────────────────────────────
@@ -716,6 +789,109 @@ export const appRouter = router({
       .input(z.object({ classId: z.number() }))
       .query(async ({ input }) => {
         return getReportsByClass(input.classId);
+      }),
+
+    // ─── Drawing Review ───────────────────────────────────────────────
+    getDrawingAnswers: teacherOrAdminProcedure
+      .input(z.object({ classId: z.number(), examId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const cls = await getClassById(input.classId);
+        if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
+        return getDrawingAnswersForReview(input.classId, input.examId);
+      }),
+
+    reviewDrawingAnswer: teacherOrAdminProcedure
+      .input(z.object({
+        answerId: z.number(),
+        attemptId: z.number(),
+        pointsEarned: z.number().min(0).max(2),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        // Verify teacher owns the class
+        const attempt = await getAttemptById(input.attemptId);
+        if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
+        const cls = await getClassById(attempt.classId);
+        if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
+        // Update the answer score
+        await updateDrawingAnswerScore(input.answerId, input.pointsEarned);
+        // Recalculate the attempt totals
+        const newTotals = await recalculateAttemptScore(input.attemptId);
+
+        // Regenerate and save the student report so PDF/HTML downloads stay accurate
+        try {
+          const freshAttempt = await getAttemptById(input.attemptId);
+          const student = freshAttempt ? await getPlatformUserById(freshAttempt.studentId) : null;
+          const exam = freshAttempt ? await getExamById(freshAttempt.examId) : null;
+          const examCls = freshAttempt ? await getClassById(freshAttempt.classId) : null;
+          if (freshAttempt && student && exam && examCls) {
+            const answers = await getAnswersForAttempt(input.attemptId);
+            const examData = await getExamWithQuestions(freshAttempt.examId);
+            const questionsList = (examData?.questions ?? []).filter(Boolean).map((q) => ({
+              ...q!,
+              scienceSubDomain: q!.scienceSubDomain ?? null,
+              maxPoints: q!.maxPoints ?? 1,
+              session: q!.session ?? null,
+            }));
+            const scoredAnswers = answers.map((a) => ({
+              questionId: a.questionId,
+              answerGiven: a.answerGiven ?? null,
+              isCorrect: a.isCorrect ?? null,
+              pointsEarned: a.pointsEarned ?? 0,
+            }));
+            const reportData = generateReportData(
+              { id: student.id, name: student.name },
+              { id: exam.id, name: exam.name },
+              examCls.name,
+              {
+                totalScore: newTotals?.totalScore ?? freshAttempt.totalScore ?? 0,
+                totalMaxPoints: newTotals?.totalMaxPoints ?? freshAttempt.totalMaxPoints ?? 0,
+                totalQuestions: freshAttempt.totalQuestions ?? 0,
+                mathScore: newTotals?.mathScore ?? freshAttempt.mathScore ?? 0,
+                mathMaxPoints: newTotals?.mathMaxPoints ?? freshAttempt.mathMaxPoints ?? 0,
+                mathTotal: freshAttempt.mathTotal ?? 0,
+                scienceScore: newTotals?.scienceScore ?? freshAttempt.scienceScore ?? 0,
+                scienceMaxPoints: newTotals?.scienceMaxPoints ?? freshAttempt.scienceMaxPoints ?? 0,
+                scienceTotal: freshAttempt.scienceTotal ?? 0,
+                domainBreakdown: freshAttempt.domainBreakdown,
+                timeSpentSeconds: freshAttempt.timeSpentSeconds ?? 0,
+                session1TimeSpentSeconds: freshAttempt.session1TimeSpentSeconds ?? null,
+                session2TimeSpentSeconds: freshAttempt.session2TimeSpentSeconds ?? null,
+                submittedAt: freshAttempt.submittedAt ?? new Date(),
+              },
+              scoredAnswers,
+              questionsList
+              .filter((q) => q.id != null && q.subject != null && q.contentDomain != null)
+              .map((q) => ({
+                id: q.id!,
+                subject: q.subject!,
+                contentDomain: q.contentDomain!,
+                scienceSubDomain: q.scienceSubDomain ?? null,
+                cognitiveDomain: q.cognitiveDomain!,
+                difficulty: q.difficulty!,
+                questionType: q.questionType!,
+                correctAnswer: q.correctAnswer!,
+                maxPoints: q.maxPoints ?? 1,
+                session: q.session ?? null,
+              }))
+            );
+            await saveStudentReport({
+              attemptId: input.attemptId,
+              studentId: freshAttempt.studentId,
+              examId: freshAttempt.examId,
+              classId: freshAttempt.classId,
+              reportData,
+            });
+          }
+        } catch (reportErr) {
+          console.error("[DrawingReview] Failed to regenerate report:", reportErr);
+          // Non-fatal: the score is saved, report regeneration is best-effort
+        }
+
+        return { success: true, newTotals };
       }),
   }),
 
