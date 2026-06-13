@@ -1,7 +1,7 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
 import { usePlatformAuth } from "@/hooks/usePlatformAuth";
-import { Download, Pencil } from "lucide-react";
+import { Download, Pencil, Eye, EyeOff, CheckCircle } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -20,6 +20,16 @@ type ReportData = {
   recommendedInterventionGroup: string;
 };
 
+type Report = {
+  id: number;
+  attemptId: number;
+  studentId: number;
+  examId: number;
+  classId: number;
+  reportData: unknown;
+  resultsPublished?: boolean;
+};
+
 export default function TeacherReports() {
   const { user } = usePlatformAuth();
   const isAuth = !!user;
@@ -27,10 +37,36 @@ export default function TeacherReports() {
   const classes = (rawClasses as Array<{ id: number; name: string }> | undefined) ?? [];
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
 
+  const utils = trpc.useUtils();
+
   const { data: classReports } = trpc.teacher.getClassReports.useQuery(
     { classId: selectedClassId! },
     { enabled: !!selectedClassId }
   );
+
+  const publishOne = trpc.teacher.publishResults.useMutation({
+    onSuccess: () => {
+      utils.teacher.getClassReports.invalidate();
+      toast.success("Results published — student can now view them.");
+    },
+    onError: () => toast.error("Failed to publish results."),
+  });
+
+  const unpublishOne = trpc.teacher.unpublishResults.useMutation({
+    onSuccess: () => {
+      utils.teacher.getClassReports.invalidate();
+      toast.success("Results hidden from student.");
+    },
+    onError: () => toast.error("Failed to unpublish results."),
+  });
+
+  const publishAll = trpc.teacher.publishAllResults.useMutation({
+    onSuccess: () => {
+      utils.teacher.getClassReports.invalidate();
+      toast.success("All results published for this class and exam.");
+    },
+    onError: () => toast.error("Failed to publish all results."),
+  });
 
   const handleDownloadClassReport = () => {
     if (!selectedClassId) return;
@@ -40,15 +76,27 @@ export default function TeacherReports() {
 
   const [, navigate] = useLocation();
 
+  // Group reports by exam for the "Publish All" button
+  const examGroups = classReports
+    ? Array.from(
+        classReports.reduce((map, r) => {
+          const data = r.reportData as unknown as ReportData;
+          const key = `${r.examId}`;
+          if (!map.has(key)) map.set(key, { examId: r.examId, examName: data.examName, classId: r.classId });
+          return map;
+        }, new Map<string, { examId: number; examName: string; classId: number }>())
+      ).map(([, v]) => v)
+    : [];
+
   return (
     <PlatformLayout title="Reports">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Student Reports</h2>
-            <p className="text-sm text-gray-500 mt-0.5">View and download detailed assessment reports</p>
+            <p className="text-sm text-gray-500 mt-0.5">View, publish, and download detailed assessment reports</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => navigate("/teacher/answer-review")}
               className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
@@ -95,6 +143,27 @@ export default function TeacherReports() {
           </div>
         </div>
 
+        {/* Bulk Publish by Exam */}
+        {selectedClassId && examGroups.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <h3 className="font-semibold text-gray-900 mb-3">Publish All Results by Exam</h3>
+            <div className="flex flex-wrap gap-2">
+              {examGroups.map((eg) => (
+                <button
+                  key={eg.examId}
+                  onClick={() => publishAll.mutate({ classId: eg.classId, examId: eg.examId })}
+                  disabled={publishAll.isPending}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  Publish All — {eg.examName}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-2">Clicking "Publish All" makes all submitted results for that exam visible to students immediately.</p>
+          </div>
+        )}
+
         {/* Reports table */}
         {selectedClassId && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -111,15 +180,17 @@ export default function TeacherReports() {
                     <th className="text-left px-5 py-3 font-semibold text-gray-600">Math</th>
                     <th className="text-left px-5 py-3 font-semibold text-gray-600">Science</th>
                     <th className="text-left px-5 py-3 font-semibold text-gray-600">Group</th>
+                    <th className="text-left px-5 py-3 font-semibold text-gray-600">Published</th>
                     <th className="text-right px-5 py-3 font-semibold text-gray-600">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {classReports?.length === 0 ? (
-                    <tr><td colSpan={7} className="text-center py-8 text-gray-400">No reports yet. Students must submit exams first.</td></tr>
+                    <tr><td colSpan={8} className="text-center py-8 text-gray-400">No reports yet. Students must submit exams first.</td></tr>
                   ) : (
-                    classReports?.map((r) => {
+                    (classReports as Report[] | undefined)?.map((r) => {
                       const data = r.reportData as unknown as ReportData;
+                      const isPublished = !!(r as Report).resultsPublished;
                       return (
                         <tr key={r.id} className="hover:bg-gray-50">
                           <td className="px-5 py-3 font-medium text-gray-900">{data.studentName}</td>
@@ -144,7 +215,37 @@ export default function TeacherReports() {
                             </span>
                           </td>
                           <td className="px-5 py-3">
-                            <div className="flex justify-end">
+                            {isPublished ? (
+                              <span className="inline-flex items-center gap-1 text-green-600 text-xs font-medium">
+                                <Eye className="w-3.5 h-3.5" /> Visible
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-gray-400 text-xs font-medium">
+                                <EyeOff className="w-3.5 h-3.5" /> Hidden
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="flex justify-end gap-1.5">
+                              {isPublished ? (
+                                <button
+                                  onClick={() => unpublishOne.mutate({ attemptId: r.attemptId })}
+                                  disabled={unpublishOne.isPending}
+                                  className="flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-700 rounded text-xs hover:bg-amber-200 disabled:opacity-50"
+                                >
+                                  <EyeOff className="w-3 h-3" />
+                                  Hide
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => publishOne.mutate({ attemptId: r.attemptId })}
+                                  disabled={publishOne.isPending}
+                                  className="flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 rounded text-xs hover:bg-green-200 disabled:opacity-50"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  Publish
+                                </button>
+                              )}
                               <button
                                 onClick={() => {
                                   toast.info("Generating PDF...");

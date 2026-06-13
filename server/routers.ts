@@ -1,4 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
+import { and, eq } from "drizzle-orm";
+import { studentExamAttempts } from "../drizzle/schema";
+import { getDb } from "./db";
 import { TRPCError } from "@trpc/server";
 import { createHash } from "crypto";
 import { SignJWT, jwtVerify } from "jose";
@@ -704,6 +707,122 @@ export const appRouter = router({
         await db.delete(studentExamAttempts);
         return { success: true, message: "All student exam data has been cleared." };
       }),
+
+    // Comprehensive analytics for the admin dashboard
+    getAnalytics: adminProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return null;
+      const { studentExamAttempts: sea, studentAnswers: sa, questions: q, platformUsers: pu, classes: cl, exams: ex } = await import("../drizzle/schema");
+      const { count, avg, sql: drizzleSql } = await import("drizzle-orm");
+
+      // Total counts
+      const [totalStudents] = await db.select({ count: count() }).from(pu).where(eq(pu.role, "student"));
+      const [totalAttempts] = await db.select({ count: count() }).from(sea);
+      const [submittedAttempts] = await db.select({ count: count() }).from(sea).where(eq(sea.status, "submitted"));
+      const [totalQuestions] = await db.select({ count: count() }).from(q);
+
+      // Average score across all submitted attempts
+      const [avgScore] = await db
+        .select({ avg: avg(sea.totalScore) })
+        .from(sea)
+        .where(eq(sea.status, "submitted"));
+
+      // Per-class performance
+      const allClasses = await db.select().from(cl);
+      const classPerformance = [];
+      for (const cls of allClasses) {
+        const attempts = await db
+          .select()
+          .from(sea)
+          .where(and(eq(sea.classId, cls.id), eq(sea.status, "submitted")));
+        if (attempts.length === 0) continue;
+        const avgPct = attempts.reduce((s, a) => {
+          const max = a.totalMaxPoints ?? 0;
+          return s + (max > 0 ? ((a.totalScore ?? 0) / max) * 100 : 0);
+        }, 0) / attempts.length;
+        const mathAvg = attempts.reduce((s, a) => {
+          const max = a.mathMaxPoints ?? 0;
+          return s + (max > 0 ? ((a.mathScore ?? 0) / max) * 100 : 0);
+        }, 0) / attempts.length;
+        const sciAvg = attempts.reduce((s, a) => {
+          const max = a.scienceMaxPoints ?? 0;
+          return s + (max > 0 ? ((a.scienceScore ?? 0) / max) * 100 : 0);
+        }, 0) / attempts.length;
+        classPerformance.push({
+          classId: cls.id,
+          className: cls.name,
+          submittedCount: attempts.length,
+          avgPercentage: Math.round(avgPct),
+          mathAvg: Math.round(mathAvg),
+          scienceAvg: Math.round(sciAvg),
+        });
+      }
+
+      // Per-exam performance
+      const allExams = await db.select().from(ex);
+      const examPerformance = [];
+      for (const exam of allExams) {
+        const attempts = await db
+          .select()
+          .from(sea)
+          .where(and(eq(sea.examId, exam.id), eq(sea.status, "submitted")));
+        if (attempts.length === 0) continue;
+        const avgPct = attempts.reduce((s, a) => {
+          const max = a.totalMaxPoints ?? 0;
+          return s + (max > 0 ? ((a.totalScore ?? 0) / max) * 100 : 0);
+        }, 0) / attempts.length;
+        examPerformance.push({
+          examId: exam.id,
+          examName: exam.name,
+          submittedCount: attempts.length,
+          avgPercentage: Math.round(avgPct),
+        });
+      }
+
+      // Score distribution buckets (0-20, 21-40, 41-60, 61-80, 81-100)
+      const allSubmitted = await db.select().from(sea).where(eq(sea.status, "submitted"));
+      const distribution = [0, 0, 0, 0, 0];
+      for (const a of allSubmitted) {
+        const max = a.totalMaxPoints ?? 0;
+        const pct = max > 0 ? ((a.totalScore ?? 0) / max) * 100 : 0;
+        if (pct <= 20) distribution[0]++;
+        else if (pct <= 40) distribution[1]++;
+        else if (pct <= 60) distribution[2]++;
+        else if (pct <= 80) distribution[3]++;
+        else distribution[4]++;
+      }
+
+      // Intervention group counts
+      const groups = { advanced: 0, consolidation: 0, targeted: 0, intensive: 0 };
+      for (const a of allSubmitted) {
+        const max = a.totalMaxPoints ?? 0;
+        const pct = max > 0 ? ((a.totalScore ?? 0) / max) * 100 : 0;
+        if (pct >= 80) groups.advanced++;
+        else if (pct >= 60) groups.consolidation++;
+        else if (pct >= 40) groups.targeted++;
+        else groups.intensive++;
+      }
+
+      return {
+        totals: {
+          students: totalStudents.count,
+          attempts: totalAttempts.count,
+          submitted: submittedAttempts.count,
+          questions: totalQuestions.count,
+          avgScore: avgScore.avg ? Math.round(Number(avgScore.avg)) : 0,
+        },
+        classPerformance,
+        examPerformance,
+        scoreDistribution: [
+          { label: "0–20%", count: distribution[0] },
+          { label: "21–40%", count: distribution[1] },
+          { label: "41–60%", count: distribution[2] },
+          { label: "61–80%", count: distribution[3] },
+          { label: "81–100%", count: distribution[4] },
+        ],
+        interventionGroups: groups,
+      };
+    }),
   }),
 
   // ─── Teacher ──────────────────────────────────────────────────────────────
@@ -1038,6 +1157,51 @@ export const appRouter = router({
       .input(z.object({ studentId: z.number() }))
       .query(async ({ input }) => {
         return getStudentExamAssignments(input.studentId);
+      }),
+
+    // Publish results for a specific attempt so the student can view them
+    publishResults: teacherOrAdminProcedure
+      .input(z.object({ attemptId: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db
+          .update(studentExamAttempts)
+          .set({ resultsPublished: true })
+          .where(eq(studentExamAttempts.id, input.attemptId));
+        return { success: true };
+      }),
+
+    // Unpublish results (hide from student)
+    unpublishResults: teacherOrAdminProcedure
+      .input(z.object({ attemptId: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db
+          .update(studentExamAttempts)
+          .set({ resultsPublished: false })
+          .where(eq(studentExamAttempts.id, input.attemptId));
+        return { success: true };
+      }),
+
+    // Publish all results for an entire class+exam at once
+    publishAllResults: teacherOrAdminProcedure
+      .input(z.object({ classId: z.number(), examId: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        await db
+          .update(studentExamAttempts)
+          .set({ resultsPublished: true })
+          .where(
+            and(
+              eq(studentExamAttempts.classId, input.classId),
+              eq(studentExamAttempts.examId, input.examId),
+              eq(studentExamAttempts.status, "submitted")
+            )
+          );
+        return { success: true };
       }),
   }),
 
@@ -1450,6 +1614,27 @@ export const appRouter = router({
     myReports: platformProcedure.query(async ({ ctx }) => {
       return getReportsByStudent(ctx.platformUser.id);
     }),
+
+    // Get a single attempt's full result — only if teacher has published it
+    getMyResult: platformProcedure
+      .input(z.object({ attemptId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const [attempt] = await db
+          .select()
+          .from(studentExamAttempts)
+          .where(eq(studentExamAttempts.id, input.attemptId))
+          .limit(1);
+        if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
+        if (attempt.studentId !== ctx.platformUser.id) throw new TRPCError({ code: "FORBIDDEN" });
+        if (!attempt.resultsPublished) {
+          return { published: false, attempt: null, answers: null, report: null };
+        }
+        const answers = await getAnswersForAttempt(input.attemptId);
+        const report = await getReportByAttemptId(input.attemptId);
+        return { published: true, attempt, answers, report };
+      }),
   }),
 });
 

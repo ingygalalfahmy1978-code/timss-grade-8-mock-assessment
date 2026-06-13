@@ -223,6 +223,7 @@ export const studentExamAttempts = mysqlTable("student_exam_attempts", {
   domainBreakdown: json("domain_breakdown"),
   // Whether background questionnaire was completed
   questionnaireCompleted: boolean("questionnaire_completed").default(false).notNull(),
+  resultsPublished: boolean("results_published").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 });

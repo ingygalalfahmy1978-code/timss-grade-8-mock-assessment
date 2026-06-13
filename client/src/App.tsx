@@ -18,6 +18,7 @@ import AdminClasses from "./pages/admin/AdminClasses";
 import AdminQuestions from "./pages/admin/AdminQuestions";
 import AdminExams from "./pages/admin/AdminExams";
 import AdminExamDetail from "./pages/admin/AdminExamDetail";
+import AdminAnalytics from "./pages/admin/AdminAnalytics";
 
 // Teacher pages
 import TeacherDashboard from "./pages/teacher/TeacherDashboard";
@@ -33,6 +34,7 @@ import ExamInstructions from "./pages/student/ExamInstructions";
 import ExamInterface from "./pages/student/ExamInterface";
 import ExamComplete from "./pages/student/ExamComplete";
 import StudentQuestionnaire from "./pages/student/StudentQuestionnaire";
+import MyResults from "./pages/student/MyResults";
 
 const Spinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -112,6 +114,9 @@ function Router() {
       <Route path="/admin/exams/:id">
         {() => <ProtectedRoute component={AdminExamDetail} allowedRoles={["admin"]} />}
       </Route>
+      <Route path="/admin/analytics">
+        {() => <ProtectedRoute component={AdminAnalytics} allowedRoles={["admin"]} />}
+      </Route>
 
       {/* Teacher routes */}
       <Route path="/teacher">
@@ -148,6 +153,9 @@ function Router() {
       </Route>
       <Route path="/student/exam/:examId/:classId">
         {() => <ProtectedRoute component={ExamInterface} allowedRoles={["student"]} />}
+      </Route>
+      <Route path="/student/results">
+        {() => <ProtectedRoute component={MyResults} allowedRoles={["student"]} />}
       </Route>
 
       <Route path="/404" component={NotFound} />

@@ -129,7 +129,7 @@ export default function TeacherClassDetail() {
                   {students?.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.username})</option>)}
                 </select>
               </div>
-            </div>
+            </div> {/* end grid */}
             {assignStudentId && (
               <div>
                 <div className="text-xs font-medium text-gray-700 mb-2">Available Exams — click to assign or remove:</div>

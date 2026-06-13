@@ -1,7 +1,7 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
 import { usePlatformAuth } from "@/hooks/usePlatformAuth";
-import { BookOpen, ClipboardList, GraduationCap, Users, Trash2 } from "lucide-react";
+import { BookOpen, BarChart3, ClipboardList, GraduationCap, Users, Trash2 } from "lucide-react";
 import { Link } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -140,7 +140,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <Link href="/admin/students">
             <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow cursor-pointer">
               <GraduationCap className="w-8 h-8 text-blue-500 mb-3" />
@@ -160,6 +160,13 @@ export default function AdminDashboard() {
               <BookOpen className="w-8 h-8 text-violet-500 mb-3" />
               <div className="font-semibold text-gray-900">Manage Exams</div>
               <div className="text-sm text-gray-500 mt-1">Create and assign mock exams</div>
+            </div>
+          </Link>
+          <Link href="/admin/analytics">
+            <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow cursor-pointer">
+              <BarChart3 className="w-8 h-8 text-green-500 mb-3" />
+              <div className="font-semibold text-gray-900">Analytics</div>
+              <div className="text-sm text-gray-500 mt-1">Class performance & insights</div>
             </div>
           </Link>
         </div>
