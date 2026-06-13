@@ -1666,6 +1666,17 @@ export default function ExamInterface() {
               {currentQ.questionType === "drawing_canvas" && interactiveData && (
                 <DrawingCanvasQuestion data={interactiveData} answer={currentAnswer} onChange={(v) => handleAnswerChange(currentQ.id, v)} />
               )}
+
+              {/* Fallback: interactive question with no data — show textarea */}
+              {["drag_drop", "matching", "ordering", "pattern_interaction", "psi_lab", "drawing_canvas"].includes(currentQ.questionType) && !interactiveData && (
+                <div className="mt-3">
+                  <textarea value={currentAnswer} onChange={(e) => handleAnswerChange(currentQ.id, e.target.value)}
+                    placeholder="Type your answer here. Show your working where applicable."
+                    rows={5}
+                    className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:border-blue-500 resize-none text-sm leading-relaxed transition-colors" />
+                  <p className="text-xs text-slate-400 mt-1.5">Write your answer clearly.</p>
+                </div>
+              )}
             </div>
           </div>
 
