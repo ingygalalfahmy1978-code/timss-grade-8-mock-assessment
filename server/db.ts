@@ -845,15 +845,15 @@ export async function assignExamToStudent(
   studentId: number,
   examId: number,
   classId: number,
-  assignedBy: number
+  assignedBy?: number | null
 ) {
   const db = await getDb();
   if (!db) return;
   // Upsert — ignore duplicate
   await db
     .insert(studentExamAssignments)
-    .values({ studentId, examId, classId, assignedBy })
-    .onDuplicateKeyUpdate({ set: { assignedBy } });
+    .values({ studentId, examId, classId, assignedBy: assignedBy ?? null })
+    .onDuplicateKeyUpdate({ set: { assignedBy: assignedBy ?? null } });
 }
 
 /** Remove a specific exam assignment from a student */
