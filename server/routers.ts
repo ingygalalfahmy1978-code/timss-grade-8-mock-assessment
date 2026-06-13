@@ -52,6 +52,10 @@ import {
   recalculateAttemptScore,
   getStudentAttemptDetail,
   overrideAnswerScore,
+  getStudentExamAssignments,
+  getExamAssignmentsForClass,
+  assignExamToStudent,
+  removeExamFromStudent,
 } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { ENV } from "./_core/env";
@@ -997,20 +1001,69 @@ export const appRouter = router({
 
         return { success: true, newTotals };
       }),
+
+    // Assign a specific exam to a specific student
+    assignExamToStudent: teacherOrAdminProcedure
+      .input(z.object({
+        studentId: z.number(),
+        examId: z.number(),
+        classId: z.number(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await assignExamToStudent(input.studentId, input.examId, input.classId, ctx.platformUser.id);
+        return { success: true };
+      }),
+
+    // Remove a specific exam assignment from a student
+    removeExamFromStudent: teacherOrAdminProcedure
+      .input(z.object({
+        studentId: z.number(),
+        examId: z.number(),
+        classId: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        await removeExamFromStudent(input.studentId, input.examId, input.classId);
+        return { success: true };
+      }),
+
+    // Get all individual assignments for a class (for teacher UI)
+    getClassStudentAssignments: teacherOrAdminProcedure
+      .input(z.object({ classId: z.number() }))
+      .query(async ({ input }) => {
+        return getExamAssignmentsForClass(input.classId);
+      }),
+
+    // Get all individual assignments for a specific student
+    getStudentAssignments: teacherOrAdminProcedure
+      .input(z.object({ studentId: z.number() }))
+      .query(async ({ input }) => {
+        return getStudentExamAssignments(input.studentId);
+      }),
   }),
 
   // ─── Student ──────────────────────────────────────────────────────────────
   student: router({
     availableExams: platformProcedure.query(async ({ ctx }) => {
-      const studentClasses = await getClassesForStudent(ctx.platformUser.id);
+      const studentId = ctx.platformUser.id;
+      const studentClasses = await getClassesForStudent(studentId);
+      const attempts = await getAttemptsByStudent(studentId);
+
+      // Check if this student has any individual exam assignments
+      const individualAssignments = await getStudentExamAssignments(studentId);
+
       const result = [];
-      for (const cls of studentClasses) {
-        const assignments = await getClassExamAssignments(cls.id);
-        for (const a of assignments) {
-          if (!a.isActive) continue;
-          const exam = await getExamById(a.examId);
+
+      if (individualAssignments.length > 0) {
+        // Student has individual assignments — only show those
+        for (const ia of individualAssignments) {
+          const cls = studentClasses.find((c) => c.id === ia.classId);
+          if (!cls) continue;
+          // Verify the exam is still active for this class
+          const classAssignments = await getClassExamAssignments(ia.classId);
+          const active = classAssignments.find((a) => a.examId === ia.examId && a.isActive);
+          if (!active) continue;
+          const exam = await getExamById(ia.examId);
           if (!exam) continue;
-          const attempts = await getAttemptsByStudent(ctx.platformUser.id);
           const attempt = attempts.find((at) => at.examId === exam.id && at.classId === cls.id);
           result.push({
             exam,
@@ -1022,7 +1075,28 @@ export const appRouter = router({
             questionnaireCompleted: attempt?.questionnaireCompleted ?? false,
           });
         }
+      } else {
+        // No individual assignments — fall back to all active class exams
+        for (const cls of studentClasses) {
+          const assignments = await getClassExamAssignments(cls.id);
+          for (const a of assignments) {
+            if (!a.isActive) continue;
+            const exam = await getExamById(a.examId);
+            if (!exam) continue;
+            const attempt = attempts.find((at) => at.examId === exam.id && at.classId === cls.id);
+            result.push({
+              exam,
+              className: cls.name,
+              classId: cls.id,
+              attemptStatus: attempt?.status ?? null,
+              attemptId: attempt?.id ?? null,
+              currentSession: attempt?.currentSession ?? null,
+              questionnaireCompleted: attempt?.questionnaireCompleted ?? false,
+            });
+          }
+        }
       }
+
       return result;
     }),
 

@@ -12,6 +12,7 @@ import {
   questions,
   studentAnswers,
   studentClasses,
+  studentExamAssignments,
   studentExamAttempts,
   studentReports,
   users,
@@ -814,4 +815,62 @@ export async function overrideAnswerScore(answerId: number, pointsEarned: number
     .update(studentAnswers)
     .set({ pointsEarned, isCorrect, updatedAt: new Date() })
     .where(eq(studentAnswers.id, answerId));
+}
+
+
+// ─── Per-Student Exam Assignments ────────────────────────────────────────────
+
+/** Get all exam assignments for a specific student */
+export async function getStudentExamAssignments(studentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(studentExamAssignments)
+    .where(eq(studentExamAssignments.studentId, studentId));
+}
+
+/** Get all student assignments for a class (for teacher UI) */
+export async function getExamAssignmentsForClass(classId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(studentExamAssignments)
+    .where(eq(studentExamAssignments.classId, classId));
+}
+
+/** Assign a specific exam to a specific student in a class */
+export async function assignExamToStudent(
+  studentId: number,
+  examId: number,
+  classId: number,
+  assignedBy: number
+) {
+  const db = await getDb();
+  if (!db) return;
+  // Upsert — ignore duplicate
+  await db
+    .insert(studentExamAssignments)
+    .values({ studentId, examId, classId, assignedBy })
+    .onDuplicateKeyUpdate({ set: { assignedBy } });
+}
+
+/** Remove a specific exam assignment from a student */
+export async function removeExamFromStudent(
+  studentId: number,
+  examId: number,
+  classId: number
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .delete(studentExamAssignments)
+    .where(
+      and(
+        eq(studentExamAssignments.studentId, studentId),
+        eq(studentExamAssignments.examId, examId),
+        eq(studentExamAssignments.classId, classId)
+      )
+    );
 }

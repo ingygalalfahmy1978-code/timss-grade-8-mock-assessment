@@ -280,6 +280,22 @@ export const backgroundQuestionnaireResponses = mysqlTable("background_questionn
 
 export type BackgroundQuestionnaireResponse = typeof backgroundQuestionnaireResponses.$inferSelect;
 
+// ─── Per-Student Exam Assignments ───────────────────────────────────────────
+// Allows teachers/admins to assign a specific exam to an individual student.
+// When a student has at least one entry here, availableExams returns ONLY those
+// assigned exams (instead of all active class exams).
+
+export const studentExamAssignments = mysqlTable("student_exam_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  studentId: int("student_id").notNull(),
+  examId: int("exam_id").notNull(),
+  classId: int("class_id").notNull(),
+  assignedBy: int("assigned_by"), // teacher/admin userId
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type StudentExamAssignment = typeof studentExamAssignments.$inferSelect;
+
 // ─── Legacy OAuth users table (required by auth core) ────────────────────────
 
 export const users = mysqlTable("users", {

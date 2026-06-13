@@ -1,6 +1,6 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, Download, Eye } from "lucide-react";
+import { ArrowLeft, Download, Eye, UserCheck, X } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "wouter";
 import { toast } from "sonner";
@@ -30,8 +30,24 @@ export default function TeacherClassDetail() {
   const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
   const [selectedExamId, setSelectedExamId] = useState<number | null>(null);
 
+  const [showAssignPanel, setShowAssignPanel] = useState(false);
+  const [assignStudentId, setAssignStudentId] = useState<number | null>(null);
+
   const { data: students } = trpc.teacher.classStudents.useQuery({ classId });
   const { data: classExams } = trpc.teacher.classExams.useQuery({ classId });
+  const { data: classAssignments, refetch: refetchAssignments } = trpc.teacher.getClassStudentAssignments.useQuery({ classId });
+
+  const utils = trpc.useUtils();
+
+  const assignMutation = trpc.teacher.assignExamToStudent.useMutation({
+    onSuccess: () => { toast.success("Exam assigned to student"); refetchAssignments(); utils.teacher.getClassStudentAssignments.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const removeMutation = trpc.teacher.removeExamFromStudent.useMutation({
+    onSuccess: () => { toast.success("Assignment removed"); refetchAssignments(); utils.teacher.getClassStudentAssignments.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const { data: classProgress } = trpc.teacher.classProgress.useQuery(
     { classId, examId: selectedExamId! },
@@ -63,13 +79,22 @@ export default function TeacherClassDetail() {
             <ArrowLeft className="w-4 h-4" />
             Back to Classes
           </Link>
-          <button
-            onClick={handleDownloadClassReport}
-            className="flex items-center gap-2 px-3 py-1.5 bg-[oklch(0.42_0.14_240)] text-white rounded-lg text-sm font-medium hover:bg-[oklch(0.38_0.14_240)]"
-          >
-            <Download className="w-4 h-4" />
-            Download Class Report
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowAssignPanel((v) => !v)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-blue-300 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-50"
+            >
+              <UserCheck className="w-4 h-4" />
+              Assign Exams
+            </button>
+            <button
+              onClick={handleDownloadClassReport}
+              className="flex items-center gap-2 px-3 py-1.5 bg-[oklch(0.42_0.14_240)] text-white rounded-lg text-sm font-medium hover:bg-[oklch(0.38_0.14_240)]"
+            >
+              <Download className="w-4 h-4" />
+              Download Class Report
+            </button>
+          </div>
         </div>
 
         {/* Exam selector */}
@@ -86,6 +111,58 @@ export default function TeacherClassDetail() {
             ))}
           </select>
         </div>
+
+        {/* Per-student exam assignment panel */}
+        {showAssignPanel && (
+          <div className="bg-white rounded-xl border border-blue-200 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2"><UserCheck className="w-4 h-4 text-blue-600" /> Assign Exam to Individual Student</h3>
+              <button onClick={() => setShowAssignPanel(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+            </div>
+            <p className="text-xs text-gray-500">When a student has individual assignments, they will <strong>only</strong> see those exams on their dashboard. Students with no individual assignments see all active class exams.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Select Student</label>
+                <select value={assignStudentId ?? ""} onChange={(e) => setAssignStudentId(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                  <option value="">Choose student...</option>
+                  {students?.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.username})</option>)}
+                </select>
+              </div>
+            </div>
+            {assignStudentId && (
+              <div>
+                <div className="text-xs font-medium text-gray-700 mb-2">Available Exams — click to assign or remove:</div>
+                <div className="flex flex-wrap gap-2">
+                  {classExams?.map((ce) => {
+                    const isAssigned = classAssignments?.some(
+                      (a) => a.studentId === assignStudentId && a.examId === ce.examId
+                    );
+                    return (
+                      <button key={ce.examId}
+                        onClick={() => {
+                          if (isAssigned) {
+                            removeMutation.mutate({ studentId: assignStudentId, examId: ce.examId, classId });
+                          } else {
+                            assignMutation.mutate({ studentId: assignStudentId, examId: ce.examId, classId });
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${
+                          isAssigned
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-white text-gray-700 border-gray-200 hover:border-blue-400"
+                        }`}
+                      >
+                        {isAssigned ? "✓ " : ""}{ce.examName}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-400 mt-2">Blue = assigned to this student. Click to toggle.</p>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Student list with progress */}
