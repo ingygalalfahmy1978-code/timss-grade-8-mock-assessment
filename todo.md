@@ -154,7 +154,14 @@
 - [x] All 6 mocks now have 56-61 questions each (distributed from booklets)
 - [x] All 40 tests passing after changes
 
-## Phase 14: Student Wrong-Answer Review
+## Phase 14: PDF Report Download Fix
+- [x] Replace puppeteer-core (requires Chromium, not available on Cloud Run) with pdfkit (pure Node.js)
+- [x] Rewrite generateStudentPDF using PDFKit: header, score cards, domain breakdown tables with progress bars, strengths/weaknesses, intervention group, next targets
+- [x] Rewrite generateClassPDF using PDFKit: landscape layout, summary cards, student table with color-coded scores
+- [x] Verified PDF generation works end-to-end (4.5KB PDF, 2 pages, valid PDF 1.3)
+- [x] All 40 tests still passing
+
+## Phase 15: Student Wrong-Answer Review
 - [x] Join questions table in getAnswersForAttempt (returns questionText, options, correctAnswer, explanation, imageUrl, maxPoints)
 - [x] Add "Review Wrong" tab to MyResults page showing only incorrect answers
 - [x] WrongAnswerReview component: full question text, MC options highlighted (correct=green, wrong=red), explanation panel, teacher feedback

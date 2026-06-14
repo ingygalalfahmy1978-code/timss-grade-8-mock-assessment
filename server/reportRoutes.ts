@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { getReportByAttemptId, getReportsByClass } from "./db";
-import puppeteer from "puppeteer-core";
+import PDFDocument from "pdfkit";
 
 type ReportData = {
   studentName: string;
@@ -30,207 +30,379 @@ function formatTime(seconds: number): string {
   return `${m} min ${s} sec`;
 }
 
-function generateReportHTML(data: ReportData, title: string): string {
-  const mathPct = data.mathTotal > 0 ? Math.round((data.mathScore / data.mathTotal) * 100) : data.mathScore;
-  const sciPct = data.scienceTotal > 0 ? Math.round((data.scienceScore / data.scienceTotal) * 100) : data.scienceScore;
+// ─── PDFKit helpers ───────────────────────────────────────────────────────────
 
-  const domainRows = Object.entries(data.contentDomainBreakdown ?? {})
-    .map(([domain, d]) => `
-      <tr>
-        <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;">${domain}</td>
-        <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:600;">${d.correct}/${d.total}</td>
-        <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;text-align:center;">
-          <div style="background:#e5e7eb;border-radius:4px;height:8px;width:120px;display:inline-block;vertical-align:middle;">
-            <div style="background:#2563eb;height:8px;border-radius:4px;width:${d.percentage}%;"></div>
-          </div>
-          <span style="font-size:12px;color:#374151;margin-left:8px;">${d.percentage}%</span>
-        </td>
-      </tr>
-    `).join("");
+const NAVY = "#1e3a5f";
+const BLUE = "#2563eb";
+const GREEN = "#16a34a";
+const RED = "#dc2626";
+const AMBER = "#d97706";
+const GRAY = "#6b7280";
+const LIGHT = "#f9fafb";
+const WHITE = "#ffffff";
+const TEXT = "#111827";
+const BORDER = "#e5e7eb";
 
-  const cogRows = Object.entries(data.cognitiveDomainBreakdown ?? {})
-    .map(([domain, d]) => `
-      <tr>
-        <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;">${domain}</td>
-        <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:600;">${d.correct}/${d.total}</td>
-        <td style="padding:8px 14px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:600;">${d.percentage}%</td>
-      </tr>
-    `).join("");
-
-  const interventionColor =
-    data.recommendedInterventionGroup?.includes("Advanced") ? "#16a34a" :
-    data.recommendedInterventionGroup?.includes("Consolidation") ? "#2563eb" :
-    data.recommendedInterventionGroup?.includes("Targeted") ? "#d97706" : "#dc2626";
-
-  const submittedDate = data.submittedAt
-    ? new Date(data.submittedAt).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })
-    : "N/A";
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>${title}</title>
-  <style>
-    @page { margin: 20mm 15mm; size: A4; }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; color: #111827; background: #fff; font-size: 13px; line-height: 1.6; }
-    .header { background: #1e3a5f; color: white; padding: 20px 28px; display: flex; align-items: center; gap: 16px; }
-    .header-logo { width: 48px; height: 48px; background: #2563eb; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; color: white; flex-shrink: 0; }
-    .header-text h1 { font-size: 18px; font-weight: 700; }
-    .header-text p { color: rgba(255,255,255,0.65); font-size: 11px; margin-top: 2px; }
-    .content { padding: 20px 28px; }
-    .meta-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px; }
-    .meta-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
-    .meta-card .label { font-size: 10px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
-    .meta-card .value { font-size: 14px; font-weight: 700; color: #111827; margin-top: 3px; }
-    .score-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
-    .score-card { border-radius: 8px; padding: 14px; text-align: center; border: 1px solid; }
-    .score-card .score { font-size: 26px; font-weight: 800; }
-    .score-card .label { font-size: 11px; font-weight: 600; margin-top: 2px; }
-    .section { margin-bottom: 18px; }
-    .section h2 { font-size: 13px; font-weight: 700; color: #1e3a5f; border-bottom: 2px solid #1e3a5f; padding-bottom: 5px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
-    table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    th { background: #1e3a5f; color: white; padding: 8px 14px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 18px; }
-    .list-item { padding: 3px 0; display: flex; align-items: flex-start; gap: 8px; font-size: 12px; }
-    .badge { display: inline-block; padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; }
-    .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 10px; color: #9ca3af; text-align: center; }
-    .divider { border: none; border-top: 1px solid #e5e7eb; margin: 16px 0; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <div class="header-logo">G8</div>
-    <div class="header-text">
-      <h1>Grade 8 Assessment — Student Performance Report</h1>
-      <p>TIMSS-Style Mock Assessment Platform · Confidential · For Teacher and Administrator Use Only</p>
-    </div>
-  </div>
-
-  <div class="content">
-    <!-- Student Info -->
-    <div class="meta-grid">
-      <div class="meta-card">
-        <div class="label">Student Name</div>
-        <div class="value">${data.studentName}</div>
-      </div>
-      <div class="meta-card">
-        <div class="label">Class</div>
-        <div class="value">${data.className}</div>
-      </div>
-      <div class="meta-card">
-        <div class="label">Exam Name</div>
-        <div class="value">${data.examName}</div>
-      </div>
-      <div class="meta-card">
-        <div class="label">Submitted</div>
-        <div class="value" style="font-size:12px;">${submittedDate}</div>
-      </div>
-    </div>
-
-    <!-- Score Summary -->
-    <div class="section">
-      <h2>Score Summary</h2>
-      <div class="score-grid">
-        <div class="score-card" style="background:#eff6ff;border-color:#bfdbfe;">
-          <div class="score" style="color:#1d4ed8;">${data.percentage}%</div>
-          <div class="label" style="color:#3b82f6;">Percentage</div>
-        </div>
-        <div class="score-card" style="background:#f9fafb;border-color:#e5e7eb;">
-          <div class="score" style="color:#111827;">${data.totalScore}/${data.maxScore}</div>
-          <div class="label" style="color:#6b7280;">Total Score</div>
-        </div>
-        <div class="score-card" style="background:#eef2ff;border-color:#c7d2fe;">
-          <div class="score" style="color:#4338ca;">${mathPct}%</div>
-          <div class="label" style="color:#6366f1;">Math Score</div>
-        </div>
-        <div class="score-card" style="background:#ecfdf5;border-color:#a7f3d0;">
-          <div class="score" style="color:#059669;">${sciPct}%</div>
-          <div class="label" style="color:#10b981;">Science Score</div>
-        </div>
-      </div>
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;font-size:12px;color:#374151;">
-        <strong>Time Spent:</strong> ${formatTime(data.timeSpentSeconds ?? 0)}
-      </div>
-    </div>
-
-    <!-- Content Domain Breakdown -->
-    <div class="section">
-      <h2>Content Domain Breakdown</h2>
-      <table>
-        <thead><tr><th>Domain</th><th style="text-align:center;">Score</th><th>Performance Bar</th></tr></thead>
-        <tbody>${domainRows || '<tr><td colspan="3" style="padding:8px 14px;color:#9ca3af;">No domain data available</td></tr>'}</tbody>
-      </table>
-    </div>
-
-    <!-- Cognitive Domain Breakdown -->
-    <div class="section">
-      <h2>Cognitive Domain Breakdown</h2>
-      <table>
-        <thead><tr><th>Cognitive Level</th><th style="text-align:center;">Score</th><th style="text-align:center;">Percentage</th></tr></thead>
-        <tbody>${cogRows || '<tr><td colspan="3" style="padding:8px 14px;color:#9ca3af;">No cognitive data available</td></tr>'}</tbody>
-      </table>
-    </div>
-
-    <!-- Strengths & Weaknesses -->
-    <div class="two-col">
-      <div class="section" style="margin-bottom:0;">
-        <h2>Strengths</h2>
-        ${(data.strengths ?? []).map((s) => `<div class="list-item"><span style="color:#16a34a;font-weight:700;flex-shrink:0;">✓</span><span>${s}</span></div>`).join("") || '<div class="list-item" style="color:#9ca3af;">No strengths identified yet</div>'}
-      </div>
-      <div class="section" style="margin-bottom:0;">
-        <h2>Weaknesses</h2>
-        ${(data.weaknesses ?? []).map((w) => `<div class="list-item"><span style="color:#dc2626;font-weight:700;flex-shrink:0;">✗</span><span>${w}</span></div>`).join("") || '<div class="list-item" style="color:#9ca3af;">No weaknesses identified</div>'}
-      </div>
-    </div>
-
-    <!-- Misconception Notes -->
-    <div class="section">
-      <h2>Misconception Notes</h2>
-      ${(data.misconceptionNotes ?? []).map((m) => `<div class="list-item"><span style="color:#d97706;font-weight:700;flex-shrink:0;">•</span><span>${m}</span></div>`).join("") || '<div class="list-item" style="color:#9ca3af;">No misconceptions identified</div>'}
-    </div>
-
-    <!-- Intervention Group -->
-    <div class="section">
-      <h2>Recommended Intervention Group</h2>
-      <span class="badge" style="background:${interventionColor}18;color:${interventionColor};border:1.5px solid ${interventionColor}50;">
-        ${data.recommendedInterventionGroup}
-      </span>
-    </div>
-
-    <!-- Next Practice Targets -->
-    <div class="section">
-      <h2>Next Practice Targets</h2>
-      ${(data.nextPracticeTargets ?? []).map((t) => `<div class="list-item"><span style="color:#2563eb;font-weight:700;flex-shrink:0;">→</span><span>${t}</span></div>`).join("") || '<div class="list-item" style="color:#9ca3af;">No targets specified</div>'}
-    </div>
-
-    <div class="footer">
-      Generated by Grade 8 Mock Assessment Platform &nbsp;·&nbsp; ${new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })} &nbsp;·&nbsp; This report is confidential and intended for educational use only.
-    </div>
-  </div>
-</body>
-</html>`;
+function interventionColor(group: string): string {
+  if (group?.includes("Advanced")) return GREEN;
+  if (group?.includes("Consolidation")) return BLUE;
+  if (group?.includes("Targeted")) return AMBER;
+  return RED;
 }
 
-async function generatePDF(html: string): Promise<Buffer> {
-  const browser = await puppeteer.launch({
-    executablePath: "/usr/bin/chromium",
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-    headless: true,
+/** Stream a PDFDocument to a Buffer */
+function pdfToBuffer(doc: PDFKit.PDFDocument): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+    doc.end();
   });
-  try {
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "load" });
-    const pdf = await page.pdf({
-      format: "A4",
-      margin: { top: "0", bottom: "0", left: "0", right: "0" },
-      printBackground: true,
+}
+
+/** Draw a filled rectangle */
+function rect(doc: PDFKit.PDFDocument, x: number, y: number, w: number, h: number, color: string) {
+  doc.save().rect(x, y, w, h).fill(color).restore();
+}
+
+/** Draw a horizontal rule */
+function hr(doc: PDFKit.PDFDocument, y: number) {
+  doc.save().moveTo(40, y).lineTo(555, y).strokeColor(BORDER).lineWidth(0.5).stroke().restore();
+}
+
+/** Draw a section heading */
+function sectionHeading(doc: PDFKit.PDFDocument, text: string, y: number): number {
+  rect(doc, 40, y, 515, 18, NAVY);
+  doc.font("Helvetica-Bold").fontSize(8).fillColor(WHITE).text(text.toUpperCase(), 46, y + 5, { width: 503 });
+  return y + 22;
+}
+
+/** Wrap text and return the new Y position */
+function wrappedText(doc: PDFKit.PDFDocument, text: string, x: number, y: number, width: number, opts?: object): number {
+  const before = doc.y;
+  doc.text(text, x, y, { width, ...opts });
+  return doc.y;
+}
+
+async function generateStudentPDF(data: ReportData): Promise<Buffer> {
+  const doc = new PDFDocument({ size: "A4", margin: 40, bufferPages: true });
+
+  const PAGE_W = 515; // 595 - 2*40
+  const L = 40;       // left margin
+
+  // ── Header ──────────────────────────────────────────────────────────────────
+  rect(doc, 0, 0, 595, 70, NAVY);
+  rect(doc, L, 14, 42, 42, BLUE);
+  doc.font("Helvetica-Bold").fontSize(16).fillColor(WHITE).text("G8", L + 8, 22);
+  doc.font("Helvetica-Bold").fontSize(13).fillColor(WHITE).text("Grade 8 Assessment — Student Performance Report", 92, 18);
+  doc.font("Helvetica").fontSize(8).fillColor("rgba(255,255,255,0.7)").text(
+    "TIMSS-Style Mock Assessment Platform  ·  Confidential  ·  For Teacher and Administrator Use Only",
+    92, 36
+  );
+
+  let y = 82;
+
+  // ── Student Info cards ───────────────────────────────────────────────────────
+  const cardW = 122;
+  const cards = [
+    { label: "Student Name", value: data.studentName },
+    { label: "Class", value: data.className },
+    { label: "Exam", value: data.examName },
+    {
+      label: "Submitted",
+      value: data.submittedAt
+        ? new Date(data.submittedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+        : "N/A",
+    },
+  ];
+  cards.forEach((c, i) => {
+    const cx = L + i * (cardW + 5);
+    rect(doc, cx, y, cardW, 38, LIGHT);
+    doc.save().rect(cx, y, cardW, 38).strokeColor(BORDER).lineWidth(0.5).stroke().restore();
+    doc.font("Helvetica").fontSize(7).fillColor(GRAY).text(c.label.toUpperCase(), cx + 6, y + 5, { width: cardW - 12 });
+    doc.font("Helvetica-Bold").fontSize(9).fillColor(TEXT).text(c.value, cx + 6, y + 16, { width: cardW - 12, lineBreak: false });
+  });
+  y += 48;
+
+  // ── Score Summary ────────────────────────────────────────────────────────────
+  y = sectionHeading(doc, "Score Summary", y);
+
+  const mathPct = data.mathTotal > 0 ? Math.round((data.mathScore / data.mathTotal) * 100) : data.mathScore ?? 0;
+  const sciPct = data.scienceTotal > 0 ? Math.round((data.scienceScore / data.scienceTotal) * 100) : data.scienceScore ?? 0;
+
+  const scoreCards = [
+    { label: "Overall %", value: `${data.percentage ?? 0}%`, color: BLUE },
+    { label: "Total Score", value: `${data.totalScore ?? 0}/${data.maxScore ?? 0}`, color: NAVY },
+    { label: "Math Score", value: `${mathPct}%`, color: "#4338ca" },
+    { label: "Science Score", value: `${sciPct}%`, color: "#059669" },
+  ];
+  const scW = 124;
+  scoreCards.forEach((sc, i) => {
+    const cx = L + i * (scW + 5);
+    rect(doc, cx, y, scW, 44, LIGHT);
+    doc.save().rect(cx, y, scW, 44).strokeColor(BORDER).lineWidth(0.5).stroke().restore();
+    doc.font("Helvetica-Bold").fontSize(20).fillColor(sc.color).text(sc.value, cx + 6, y + 6, { width: scW - 12, align: "center" });
+    doc.font("Helvetica").fontSize(7.5).fillColor(GRAY).text(sc.label, cx + 6, y + 30, { width: scW - 12, align: "center" });
+  });
+  y += 54;
+
+  // Time spent
+  rect(doc, L, y, PAGE_W, 20, LIGHT);
+  doc.save().rect(L, y, PAGE_W, 20).strokeColor(BORDER).lineWidth(0.5).stroke().restore();
+  doc.font("Helvetica-Bold").fontSize(8.5).fillColor(TEXT).text("Time Spent: ", L + 8, y + 6, { continued: true });
+  doc.font("Helvetica").text(formatTime(data.timeSpentSeconds ?? 0));
+  y += 28;
+
+  // ── Content Domain Breakdown ─────────────────────────────────────────────────
+  y = sectionHeading(doc, "Content Domain Breakdown", y);
+
+  // Table header
+  rect(doc, L, y, PAGE_W, 16, NAVY);
+  doc.font("Helvetica-Bold").fontSize(7.5).fillColor(WHITE);
+  doc.text("Domain", L + 6, y + 4, { width: 220 });
+  doc.text("Score", L + 232, y + 4, { width: 60, align: "center" });
+  doc.text("Performance", L + 298, y + 4, { width: 217 });
+  y += 16;
+
+  const domainEntries = Object.entries(data.contentDomainBreakdown ?? {});
+  if (domainEntries.length === 0) {
+    doc.font("Helvetica").fontSize(8).fillColor(GRAY).text("No domain data available", L + 6, y + 4);
+    y += 20;
+  } else {
+    domainEntries.forEach(([domain, d], i) => {
+      const rowBg = i % 2 === 0 ? WHITE : LIGHT;
+      rect(doc, L, y, PAGE_W, 16, rowBg);
+      doc.save().rect(L, y, PAGE_W, 16).strokeColor(BORDER).lineWidth(0.3).stroke().restore();
+      doc.font("Helvetica").fontSize(8).fillColor(TEXT).text(domain, L + 6, y + 4, { width: 220 });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(NAVY).text(`${d.correct}/${d.total}`, L + 232, y + 4, { width: 60, align: "center" });
+      // Progress bar
+      const barX = L + 298;
+      const barW = 140;
+      const barH = 7;
+      const barY = y + 5;
+      rect(doc, barX, barY, barW, barH, BORDER);
+      rect(doc, barX, barY, Math.round(barW * (d.percentage / 100)), barH, BLUE);
+      doc.font("Helvetica").fontSize(7.5).fillColor(GRAY).text(`${d.percentage}%`, barX + barW + 6, y + 4);
+      y += 16;
     });
-    return Buffer.from(pdf);
-  } finally {
-    await browser.close();
   }
+  y += 6;
+
+  // ── Cognitive Domain Breakdown ───────────────────────────────────────────────
+  y = sectionHeading(doc, "Cognitive Domain Breakdown", y);
+
+  rect(doc, L, y, PAGE_W, 16, NAVY);
+  doc.font("Helvetica-Bold").fontSize(7.5).fillColor(WHITE);
+  doc.text("Cognitive Level", L + 6, y + 4, { width: 220 });
+  doc.text("Score", L + 232, y + 4, { width: 80, align: "center" });
+  doc.text("Percentage", L + 318, y + 4, { width: 197, align: "center" });
+  y += 16;
+
+  const cogEntries = Object.entries(data.cognitiveDomainBreakdown ?? {});
+  if (cogEntries.length === 0) {
+    doc.font("Helvetica").fontSize(8).fillColor(GRAY).text("No cognitive data available", L + 6, y + 4);
+    y += 20;
+  } else {
+    cogEntries.forEach(([domain, d], i) => {
+      const rowBg = i % 2 === 0 ? WHITE : LIGHT;
+      rect(doc, L, y, PAGE_W, 16, rowBg);
+      doc.save().rect(L, y, PAGE_W, 16).strokeColor(BORDER).lineWidth(0.3).stroke().restore();
+      doc.font("Helvetica").fontSize(8).fillColor(TEXT).text(domain, L + 6, y + 4, { width: 220 });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(NAVY).text(`${d.correct}/${d.total}`, L + 232, y + 4, { width: 80, align: "center" });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(BLUE).text(`${d.percentage}%`, L + 318, y + 4, { width: 197, align: "center" });
+      y += 16;
+    });
+  }
+  y += 6;
+
+  // ── Strengths & Weaknesses ───────────────────────────────────────────────────
+  // Check if we need a new page
+  if (y > 680) { doc.addPage(); y = 40; }
+
+  const colW = 250;
+  const swStartY = y;
+  y = sectionHeading(doc, "Strengths", y);
+  const strengthStartY = y;
+  (data.strengths ?? []).forEach((s) => {
+    if (y > 750) { doc.addPage(); y = 40; }
+    doc.font("Helvetica-Bold").fontSize(8).fillColor(GREEN).text("✓", L + 4, y, { continued: true, width: 12 });
+    doc.font("Helvetica").fontSize(8).fillColor(TEXT).text(` ${s}`, { width: colW - 20 });
+    y = doc.y + 2;
+  });
+  if ((data.strengths ?? []).length === 0) {
+    doc.font("Helvetica").fontSize(8).fillColor(GRAY).text("No strengths identified yet", L + 4, y);
+    y = doc.y + 2;
+  }
+  const leftColEndY = y;
+
+  // Weaknesses column (right side)
+  let wy = swStartY;
+  wy = sectionHeading(doc, "Areas to Improve", wy);
+  // We need to draw weaknesses at the same vertical position but right column
+  // Use absolute positioning
+  const rightX = L + colW + 15;
+  // Draw heading for right column
+  rect(doc, rightX, swStartY, colW, 18, NAVY);
+  doc.font("Helvetica-Bold").fontSize(8).fillColor(WHITE).text("AREAS TO IMPROVE", rightX + 6, swStartY + 5, { width: colW - 12 });
+  wy = swStartY + 22;
+  (data.weaknesses ?? []).forEach((w) => {
+    doc.font("Helvetica-Bold").fontSize(8).fillColor(RED).text("✗", rightX + 4, wy, { continued: true, width: 12 });
+    doc.font("Helvetica").fontSize(8).fillColor(TEXT).text(` ${w}`, { width: colW - 20 });
+    wy = doc.y + 2;
+  });
+  if ((data.weaknesses ?? []).length === 0) {
+    doc.font("Helvetica").fontSize(8).fillColor(GRAY).text("No weaknesses identified", rightX + 4, wy);
+    wy = doc.y + 2;
+  }
+
+  y = Math.max(leftColEndY, wy) + 6;
+
+  // ── Misconception Notes ──────────────────────────────────────────────────────
+  if (y > 700) { doc.addPage(); y = 40; }
+  y = sectionHeading(doc, "Misconception Notes", y);
+  (data.misconceptionNotes ?? []).forEach((m) => {
+    if (y > 750) { doc.addPage(); y = 40; }
+    doc.font("Helvetica-Bold").fontSize(8).fillColor(AMBER).text("•", L + 4, y, { continued: true, width: 12 });
+    doc.font("Helvetica").fontSize(8).fillColor(TEXT).text(` ${m}`, { width: PAGE_W - 20 });
+    y = doc.y + 2;
+  });
+  if ((data.misconceptionNotes ?? []).length === 0) {
+    doc.font("Helvetica").fontSize(8).fillColor(GRAY).text("No misconceptions identified", L + 4, y);
+    y = doc.y + 2;
+  }
+  y += 6;
+
+  // ── Intervention Group ───────────────────────────────────────────────────────
+  if (y > 720) { doc.addPage(); y = 40; }
+  y = sectionHeading(doc, "Recommended Intervention Group", y);
+  const iColor = interventionColor(data.recommendedInterventionGroup ?? "");
+  rect(doc, L, y, PAGE_W, 24, `${iColor}18`);
+  doc.save().rect(L, y, PAGE_W, 24).strokeColor(iColor).lineWidth(1).stroke().restore();
+  doc.font("Helvetica-Bold").fontSize(10).fillColor(iColor).text(data.recommendedInterventionGroup ?? "N/A", L + 10, y + 7, { width: PAGE_W - 20 });
+  y += 32;
+
+  // ── Next Practice Targets ────────────────────────────────────────────────────
+  if (y > 700) { doc.addPage(); y = 40; }
+  y = sectionHeading(doc, "Next Practice Targets", y);
+  (data.nextPracticeTargets ?? []).forEach((t) => {
+    if (y > 750) { doc.addPage(); y = 40; }
+    doc.font("Helvetica-Bold").fontSize(8).fillColor(BLUE).text("→", L + 4, y, { continued: true, width: 14 });
+    doc.font("Helvetica").fontSize(8).fillColor(TEXT).text(` ${t}`, { width: PAGE_W - 20 });
+    y = doc.y + 2;
+  });
+  if ((data.nextPracticeTargets ?? []).length === 0) {
+    doc.font("Helvetica").fontSize(8).fillColor(GRAY).text("No targets specified", L + 4, y);
+    y = doc.y + 2;
+  }
+  y += 10;
+
+  // ── Footer ───────────────────────────────────────────────────────────────────
+  hr(doc, y);
+  doc.font("Helvetica").fontSize(7.5).fillColor(GRAY).text(
+    `Generated by Grade 8 Mock Assessment Platform  ·  ${new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}  ·  Confidential — For Educational Use Only`,
+    L, y + 6, { width: PAGE_W, align: "center" }
+  );
+
+  return pdfToBuffer(doc);
+}
+
+async function generateClassPDF(reports: { reportData: unknown }[]): Promise<Buffer> {
+  const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 30, bufferPages: true });
+
+  const PAGE_W = 782; // 842 - 2*30
+  const L = 30;
+
+  const firstData = reports[0]?.reportData as unknown as ReportData;
+  const className = firstData?.className ?? "Class";
+  const examName = firstData?.examName ?? "";
+  const avgPct = reports.length > 0
+    ? Math.round(reports.reduce((sum, r) => sum + ((r.reportData as unknown as ReportData).percentage ?? 0), 0) / reports.length)
+    : 0;
+
+  // ── Header ──────────────────────────────────────────────────────────────────
+  rect(doc, 0, 0, 842, 60, NAVY);
+  doc.font("Helvetica-Bold").fontSize(14).fillColor(WHITE).text(`Class Report: ${className} — ${examName}`, L, 14);
+  doc.font("Helvetica").fontSize(8).fillColor("rgba(255,255,255,0.7)").text(
+    `Grade 8 Mock Assessment Platform  ·  Generated ${new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}`,
+    L, 34
+  );
+
+  let y = 72;
+
+  // ── Summary cards ────────────────────────────────────────────────────────────
+  const sCards = [
+    { label: "Total Students", value: String(reports.length) },
+    { label: "Class Average", value: `${avgPct}%` },
+  ];
+  sCards.forEach((c, i) => {
+    const cx = L + i * 130;
+    rect(doc, cx, y, 120, 32, LIGHT);
+    doc.save().rect(cx, y, 120, 32).strokeColor(BORDER).lineWidth(0.5).stroke().restore();
+    doc.font("Helvetica").fontSize(7).fillColor(GRAY).text(c.label.toUpperCase(), cx + 6, y + 4, { width: 108 });
+    doc.font("Helvetica-Bold").fontSize(14).fillColor(TEXT).text(c.value, cx + 6, y + 14, { width: 108 });
+  });
+  y += 42;
+
+  // ── Table ────────────────────────────────────────────────────────────────────
+  const cols = [
+    { label: "Student Name", w: 160 },
+    { label: "Exam", w: 130 },
+    { label: "Percentage", w: 80 },
+    { label: "Total Score", w: 80 },
+    { label: "Math %", w: 70 },
+    { label: "Science %", w: 80 },
+    { label: "Intervention Group", w: 182 },
+  ];
+
+  // Header row
+  rect(doc, L, y, PAGE_W, 18, NAVY);
+  let cx = L;
+  cols.forEach((col) => {
+    doc.font("Helvetica-Bold").fontSize(7.5).fillColor(WHITE).text(col.label.toUpperCase(), cx + 4, y + 5, { width: col.w - 8 });
+    cx += col.w;
+  });
+  y += 18;
+
+  reports.forEach((r, idx) => {
+    const d = r.reportData as unknown as ReportData;
+    const mathPct = d.mathTotal > 0 ? Math.round((d.mathScore / d.mathTotal) * 100) : d.mathScore ?? 0;
+    const sciPct = d.scienceTotal > 0 ? Math.round((d.scienceScore / d.scienceTotal) * 100) : d.scienceScore ?? 0;
+    const iColor = interventionColor(d.recommendedInterventionGroup ?? "");
+    const rowBg = idx % 2 === 0 ? WHITE : LIGHT;
+
+    if (y > 530) { doc.addPage(); y = 30; }
+
+    rect(doc, L, y, PAGE_W, 18, rowBg);
+    doc.save().rect(L, y, PAGE_W, 18).strokeColor(BORDER).lineWidth(0.3).stroke().restore();
+
+    let colX = L;
+    const rowData = [
+      { text: d.studentName, color: TEXT, bold: true },
+      { text: d.examName, color: TEXT, bold: false },
+      { text: `${d.percentage ?? 0}%`, color: d.percentage >= 70 ? GREEN : d.percentage >= 50 ? AMBER : RED, bold: true },
+      { text: `${d.totalScore ?? 0}/${d.maxScore ?? 0}`, color: TEXT, bold: false },
+      { text: `${mathPct}%`, color: TEXT, bold: false },
+      { text: `${sciPct}%`, color: TEXT, bold: false },
+      { text: d.recommendedInterventionGroup?.split(" – ")[0] ?? "", color: iColor, bold: true },
+    ];
+
+    rowData.forEach((cell, i) => {
+      doc.font(cell.bold ? "Helvetica-Bold" : "Helvetica").fontSize(8).fillColor(cell.color)
+        .text(cell.text, colX + 4, y + 5, { width: cols[i].w - 8, lineBreak: false });
+      colX += cols[i].w;
+    });
+    y += 18;
+  });
+
+  y += 12;
+  doc.save().moveTo(L, y).lineTo(L + PAGE_W, y).strokeColor(BORDER).lineWidth(0.5).stroke().restore();
+  doc.font("Helvetica").fontSize(7.5).fillColor(GRAY).text(
+    "Grade 8 Mock Assessment Platform  ·  Confidential  ·  For Teacher and Administrator Use Only",
+    L, y + 6, { width: PAGE_W, align: "center" }
+  );
+
+  return pdfToBuffer(doc);
 }
 
 export function registerReportRoutes(app: import("express").Application): void {
@@ -243,9 +415,8 @@ export function registerReportRoutes(app: import("express").Application): void {
       const report = await getReportByAttemptId(attemptId);
       if (!report) { res.status(404).send("Report not found"); return; }
       const data = report.reportData as unknown as ReportData;
-      const html = generateReportHTML(data, `Report - ${data.studentName}`);
-      const pdf = await generatePDF(html);
-      const filename = `report-${data.studentName.replace(/\s+/g, "-")}-${data.examName.replace(/\s+/g, "-")}.pdf`;
+      const pdf = await generateStudentPDF(data);
+      const filename = `report-${(data.studentName ?? "student").replace(/\s+/g, "-")}-${(data.examName ?? "exam").replace(/\s+/g, "-")}.pdf`;
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(pdf);
@@ -255,16 +426,15 @@ export function registerReportRoutes(app: import("express").Application): void {
     }
   });
 
-  // Download individual student report by attemptId as HTML (fallback)
+  // Download individual student report by attemptId as HTML (preview fallback)
   router.get("/attempt/:attemptId", async (req: Request, res: Response) => {
     try {
       const attemptId = Number(req.params.attemptId);
       const report = await getReportByAttemptId(attemptId);
       if (!report) { res.status(404).send("Report not found"); return; }
       const data = report.reportData as unknown as ReportData;
-      const html = generateReportHTML(data, `Report - ${data.studentName}`);
-      res.setHeader("Content-Type", "text/html");
-      res.send(html);
+      // Redirect to PDF download
+      res.redirect(`/api/reports/attempt/${attemptId}/pdf`);
     } catch (e) {
       res.status(500).send("Error generating report");
     }
@@ -279,9 +449,8 @@ export function registerReportRoutes(app: import("express").Application): void {
       const classReport = reports.find((r) => r.classId === Number(classId));
       if (!classReport) { res.status(404).send("Report not found"); return; }
       const data = classReport.reportData as unknown as ReportData;
-      const html = generateReportHTML(data, `Report - ${data.studentName}`);
-      const pdf = await generatePDF(html);
-      const filename = `report-${data.studentName.replace(/\s+/g, "-")}.pdf`;
+      const pdf = await generateStudentPDF(data);
+      const filename = `report-${(data.studentName ?? "student").replace(/\s+/g, "-")}.pdf`;
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(pdf);
@@ -297,68 +466,8 @@ export function registerReportRoutes(app: import("express").Application): void {
       const classId = Number(req.params.classId);
       const reports = await getReportsByClass(classId);
       if (!reports.length) { res.status(404).send("No reports found for this class"); return; }
-
-      const rows = reports.map((r) => {
-        const d = r.reportData as unknown as ReportData;
-        const mathPct = d.mathTotal > 0 ? Math.round((d.mathScore / d.mathTotal) * 100) : d.mathScore;
-        const sciPct = d.scienceTotal > 0 ? Math.round((d.scienceScore / d.scienceTotal) * 100) : d.scienceScore;
-        const groupColor =
-          d.recommendedInterventionGroup?.includes("Advanced") ? "#16a34a" :
-          d.recommendedInterventionGroup?.includes("Consolidation") ? "#2563eb" :
-          d.recommendedInterventionGroup?.includes("Targeted") ? "#d97706" : "#dc2626";
-        return `<tr>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;">${d.studentName}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${d.examName}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:700;color:#1d4ed8;">${d.percentage}%</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center;">${d.totalScore}/${d.maxScore}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center;">${mathPct}%</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center;">${sciPct}%</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;"><span style="background:${groupColor}18;color:${groupColor};border:1px solid ${groupColor}40;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">${d.recommendedInterventionGroup?.split(" – ")[0] ?? ""}</span></td>
-        </tr>`;
-      }).join("");
-
+      const pdf = await generateClassPDF(reports);
       const className = (reports[0]?.reportData as unknown as ReportData)?.className ?? "Class";
-      const examName = (reports[0]?.reportData as unknown as ReportData)?.examName ?? "";
-
-      const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Class Report - ${className}</title>
-  <style>
-    @page { margin: 15mm; size: A4 landscape; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; color: #111827; font-size: 12px; }
-    .header { background: #1e3a5f; color: white; padding: 16px 20px; margin-bottom: 20px; border-radius: 8px; }
-    .header h1 { font-size: 16px; font-weight: 700; }
-    .header p { color: rgba(255,255,255,0.65); font-size: 11px; margin-top: 3px; }
-    table { width: 100%; border-collapse: collapse; }
-    th { background: #1e3a5f; color: white; padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-    tr:nth-child(even) { background: #f9fafb; }
-    .footer { margin-top: 20px; font-size: 10px; color: #9ca3af; text-align: center; }
-    .summary { display: flex; gap: 16px; margin-bottom: 16px; }
-    .summary-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 14px; }
-    .summary-card .label { font-size: 10px; color: #6b7280; text-transform: uppercase; font-weight: 600; }
-    .summary-card .value { font-size: 18px; font-weight: 700; color: #111827; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>Class Report: ${className} — ${examName}</h1>
-    <p>Grade 8 Mock Assessment Platform · Generated ${new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}</p>
-  </div>
-  <div class="summary">
-    <div class="summary-card"><div class="label">Total Students</div><div class="value">${reports.length}</div></div>
-    <div class="summary-card"><div class="label">Class Average</div><div class="value">${Math.round(reports.reduce((sum, r) => sum + ((r.reportData as unknown as ReportData).percentage ?? 0), 0) / reports.length)}%</div></div>
-  </div>
-  <table>
-    <thead><tr><th>Student Name</th><th>Exam</th><th style="text-align:center;">Percentage</th><th style="text-align:center;">Total Score</th><th style="text-align:center;">Math Score</th><th style="text-align:center;">Science Score</th><th>Intervention Group</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
-  <div class="footer">Grade 8 Mock Assessment Platform · Confidential · For Teacher and Administrator Use Only</div>
-</body>
-</html>`;
-
-      const pdf = await generatePDF(html);
       const filename = `class-report-${className.replace(/\s+/g, "-")}.pdf`;
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
