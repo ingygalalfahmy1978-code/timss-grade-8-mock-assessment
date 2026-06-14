@@ -13,6 +13,7 @@ import {
   Lightbulb,
   BookOpen,
   AlertCircle,
+  Download,
 } from "lucide-react";
 
 type Option = { id: string; text: string };
@@ -280,6 +281,17 @@ function ResultDetail({ attemptId }: { attemptId: number }) {
 
   return (
     <div className="space-y-6">
+      {/* Download PDF button */}
+      <div className="flex justify-end">
+        <button
+          onClick={() => window.open(`/api/reports/attempt/${attemptId}/pdf`, "_blank")}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-[0.97] text-white text-sm font-semibold rounded-xl transition-all duration-150"
+        >
+          <Download className="w-4 h-4" />
+          Download My Report (PDF)
+        </button>
+      </div>
+
       {/* Score summary */}
       {rd && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

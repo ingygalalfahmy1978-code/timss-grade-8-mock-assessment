@@ -485,6 +485,7 @@ export async function saveStudentAnswer(data: {
   isFlagged?: boolean;
   pointsEarned?: number;
   session?: "math_session" | "science_session";
+  drawingPartBAnswer?: string | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -506,6 +507,7 @@ export async function saveStudentAnswer(data: {
         isFlagged: data.isFlagged ?? false,
         ...(data.pointsEarned !== undefined ? { pointsEarned: data.pointsEarned } : {}),
         ...(data.session ? { session: data.session } : {}),
+        ...(data.drawingPartBAnswer !== undefined ? { drawingPartBAnswer: data.drawingPartBAnswer } : {}),
       })
       .where(eq(studentAnswers.id, existing[0].id));
   } else {
@@ -516,6 +518,7 @@ export async function saveStudentAnswer(data: {
       isFlagged: data.isFlagged ?? false,
       pointsEarned: data.pointsEarned ?? 0,
       session: data.session,
+      drawingPartBAnswer: data.drawingPartBAnswer ?? null,
     });
   }
 }
@@ -534,6 +537,7 @@ export async function getAnswersForAttempt(attemptId: number) {
       pointsEarned: studentAnswers.pointsEarned,
       isFlagged: studentAnswers.isFlagged,
       session: studentAnswers.session,
+      drawingPartBAnswer: studentAnswers.drawingPartBAnswer,
       createdAt: studentAnswers.createdAt,
       updatedAt: studentAnswers.updatedAt,
       // joined question fields

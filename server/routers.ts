@@ -62,6 +62,7 @@ import {
 } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { ENV } from "./_core/env";
+import { notifyOwner } from "./_core/notification";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 
@@ -234,7 +235,14 @@ function scoreAnswer(
   }
 
   if (questionType === "drawing_canvas") {
-    // Drawing canvas is teacher-graded; auto-score as 0 pending review
+    // If correctAnswer is set, Part B written answer is auto-scored like short_answer
+    if (correctAnswer && correctAnswer.trim()) {
+      const given = (answerGiven ?? "").trim().toLowerCase();
+      const expected = correctAnswer.trim().toLowerCase();
+      const correct = given === expected || (expected.includes(given) && given.length > 3);
+      return { isCorrect: correct, pointsEarned: correct ? maxPoints : 0 };
+    }
+    // No correctAnswer set: teacher-graded; auto-score as 0 pending review
     return { isCorrect: false, pointsEarned: 0 };
   }
 
@@ -259,7 +267,7 @@ function scoreAnswer(
 
 // ─── Report Generation Helper ─────────────────────────────────────────────────
 function generateReportData(
-  student: { id: number; name: string },
+  student: { id: number; name: string; username?: string },
   exam: { id: number; name: string },
   className: string,
   attempt: {
@@ -350,6 +358,7 @@ function generateReportData(
 
   return {
     studentName: student.name,
+    studentCode: student.username ?? "",
     className,
     examName: exam.name,
     totalScore,
@@ -968,7 +977,7 @@ export const appRouter = router({
               pointsEarned: a.pointsEarned ?? 0,
             }));
             const reportData = generateReportData(
-              { id: student.id, name: student.name },
+              { id: student.id, name: student.name, username: student.username },
               { id: exam.id, name: exam.name },
               examCls.name,
               {
@@ -1070,7 +1079,7 @@ export const appRouter = router({
               pointsEarned: a.pointsEarned ?? 0,
             }));
             const reportData = generateReportData(
-              { id: student.id, name: student.name },
+              { id: student.id, name: student.name, username: student.username },
               { id: exam.id, name: exam.name },
               examCls.name,
               {
@@ -1169,6 +1178,16 @@ export const appRouter = router({
           .update(studentExamAttempts)
           .set({ resultsPublished: true })
           .where(eq(studentExamAttempts.id, input.attemptId));
+        // Notify owner that results have been published
+        const [attempt] = await db.select().from(studentExamAttempts).where(eq(studentExamAttempts.id, input.attemptId)).limit(1);
+        if (attempt) {
+          const student = await getPlatformUserById(attempt.studentId);
+          const exam = await getExamById(attempt.examId);
+          await notifyOwner({
+            title: "Results Published",
+            content: `Results for ${student?.name ?? "a student"} (${student?.username ?? ""}) on exam "${exam?.name ?? ""}" have been published. PDF report is available at /api/reports/attempt/${input.attemptId}/pdf`,
+          }).catch(() => {});
+        }
         return { success: true };
       }),
 
@@ -1201,6 +1220,13 @@ export const appRouter = router({
               eq(studentExamAttempts.status, "submitted")
             )
           );
+        // Notify owner
+        const cls = await getClassById(input.classId);
+        const exam = await getExamById(input.examId);
+        await notifyOwner({
+          title: "All Results Published",
+          content: `All results for class "${cls?.name ?? ""}" on exam "${exam?.name ?? ""}" have been published.`,
+        }).catch(() => {});
         return { success: true };
       }),
   }),
@@ -1400,6 +1426,7 @@ export const appRouter = router({
           answerGiven: z.string().nullable(),
           isFlagged: z.boolean().optional(),
           session: z.enum(["math_session", "science_session"]).optional(),
+          drawingPartBAnswer: z.string().nullable().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -1415,6 +1442,7 @@ export const appRouter = router({
           answerGiven: input.answerGiven,
           isFlagged: input.isFlagged ?? false,
           session: input.session,
+          drawingPartBAnswer: input.drawingPartBAnswer,
         });
         return { success: true };
       }),
@@ -1475,7 +1503,12 @@ export const appRouter = router({
           const answerGiven = ans?.answerGiven ?? null;
           const maxPoints = q.maxPoints ?? 1;
 
-          const { isCorrect, pointsEarned } = scoreAnswer(q.questionType, answerGiven, q.correctAnswer, maxPoints);
+          // For drawing_canvas: score Part B written answer if correctAnswer is set
+          let effectiveAnswer = answerGiven;
+          if (q.questionType === "drawing_canvas" && ans?.drawingPartBAnswer) {
+            effectiveAnswer = ans.drawingPartBAnswer;
+          }
+          const { isCorrect, pointsEarned } = scoreAnswer(q.questionType, effectiveAnswer, q.correctAnswer, maxPoints);
 
           totalScore += pointsEarned;
           totalMaxPoints += maxPoints;
@@ -1512,6 +1545,7 @@ export const appRouter = router({
               isFlagged: ans.isFlagged,
               pointsEarned,
               session: session as "math_session" | "science_session",
+              drawingPartBAnswer: ans.drawingPartBAnswer,
             });
           }
           scoredAnswers.push({ questionId: q.id, answerGiven, isCorrect, pointsEarned });
@@ -1539,7 +1573,7 @@ export const appRouter = router({
         const cls = await getClassById(attempt.classId);
         if (student && exam && cls) {
           const reportData = generateReportData(
-            { id: student.id, name: student.name },
+            { id: student.id, name: student.name, username: student.username },
             { id: exam.id, name: exam.name },
             cls.name,
             {

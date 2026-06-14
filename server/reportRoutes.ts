@@ -4,6 +4,7 @@ import PDFDocument from "pdfkit";
 
 type ReportData = {
   studentName: string;
+  studentCode?: string;
   className: string;
   examName: string;
   totalScore: number;
@@ -107,14 +108,9 @@ async function generateStudentPDF(data: ReportData): Promise<Buffer> {
   const cardW = 122;
   const cards = [
     { label: "Student Name", value: data.studentName },
+    { label: "Student ID", value: data.studentCode ?? "—" },
     { label: "Class", value: data.className },
     { label: "Exam", value: data.examName },
-    {
-      label: "Submitted",
-      value: data.submittedAt
-        ? new Date(data.submittedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-        : "N/A",
-    },
   ];
   cards.forEach((c, i) => {
     const cx = L + i * (cardW + 5);
@@ -346,13 +342,14 @@ async function generateClassPDF(reports: { reportData: unknown }[]): Promise<Buf
 
   // ── Table ────────────────────────────────────────────────────────────────────
   const cols = [
-    { label: "Student Name", w: 160 },
-    { label: "Exam", w: 130 },
-    { label: "Percentage", w: 80 },
-    { label: "Total Score", w: 80 },
-    { label: "Math %", w: 70 },
-    { label: "Science %", w: 80 },
-    { label: "Intervention Group", w: 182 },
+    { label: "Student ID", w: 70 },
+    { label: "Student Name", w: 130 },
+    { label: "Exam", w: 110 },
+    { label: "Percentage", w: 70 },
+    { label: "Total Score", w: 70 },
+    { label: "Math %", w: 60 },
+    { label: "Science %", w: 70 },
+    { label: "Intervention Group", w: 162 },
   ];
 
   // Header row
@@ -378,6 +375,7 @@ async function generateClassPDF(reports: { reportData: unknown }[]): Promise<Buf
 
     let colX = L;
     const rowData = [
+      { text: (d as ReportData & { studentCode?: string }).studentCode ?? "—", color: GRAY, bold: false },
       { text: d.studentName, color: TEXT, bold: true },
       { text: d.examName, color: TEXT, bold: false },
       { text: `${d.percentage ?? 0}%`, color: d.percentage >= 70 ? GREEN : d.percentage >= 50 ? AMBER : RED, bold: true },

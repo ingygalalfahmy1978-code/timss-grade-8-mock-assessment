@@ -167,3 +167,14 @@
 - [x] WrongAnswerReview component: full question text, MC options highlighted (correct=green, wrong=red), explanation panel, teacher feedback
 - [x] "All Questions" tab: inline explanation shown when expanding a wrong answer
 - [x] Hint shown in compact list when explanation is available ("Explanation available")
+
+## Phase 16: Student PDF Download + Student ID in PDF + Teacher Notifications + Question Editing
+
+- [x] Add student_code/ID field to PDF header (student and class reports)
+- [x] Add "Download My Report" button on student MyResults page (after results published)
+- [x] Notify teacher via notifyOwner when results are published (with PDF link)
+- [x] Teacher can edit existing questions (text, options, correct answer, explanation, type)
+- [x] Question type selector when adding/editing: Multiple Choice, Short Answer, Drawing
+- [x] Drawing questions: add Part B where student writes answer (auto-corrected against teacher-set answer)
+- [x] Update exam taking UI to show Part B text input for drawing questions
+- [x] Update auto-correction logic to handle Part B drawing answers

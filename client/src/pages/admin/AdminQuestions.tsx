@@ -267,10 +267,29 @@ export default function AdminQuestions() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Question Type *</label>
                   <select value={form.questionType} onChange={(e) => setForm({ ...form, questionType: e.target.value as QuestionTypeValue })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
-                    {QUESTION_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    <optgroup label="Auto-corrected">
+                      <option value="multiple_choice">Multiple Choice (A/B/C/D)</option>
+                      <option value="short_answer">Short Answer (exact match)</option>
+                      <option value="partial_credit_short_answer">Short Answer — Partial Credit (0–2 pts)</option>
+                    </optgroup>
+                    <optgroup label="Drawing (Part A = canvas, Part B = written answer)">
+                      <option value="drawing_canvas">Drawing Canvas + Written Answer (Part B)</option>
+                    </optgroup>
+                    <optgroup label="Interactive (teacher-graded)">
+                      <option value="drag_drop">Drag &amp; Drop</option>
+                      <option value="matching">Matching</option>
+                      <option value="ordering">Ordering</option>
+                      <option value="pattern_interaction">Pattern Interaction</option>
+                      <option value="psi_lab">PSI Lab (Problem Solving &amp; Inquiry)</option>
+                    </optgroup>
                   </select>
-                  {["drawing_canvas", "pattern_interaction", "psi_lab"].includes(form.questionType) && (
-                    <p className="text-xs text-amber-600 mt-1">⚠ This question type requires interactive data (JSON). Students will see a canvas/simulation interface.</p>
+                  {form.questionType === "drawing_canvas" && (
+                    <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
+                      <strong>Drawing + Written Answer:</strong> Students draw their answer on a canvas (Part A) and also write a short text answer (Part B). The written Part B answer is auto-corrected against the Correct Answer you set below.
+                    </div>
+                  )}
+                  {["pattern_interaction", "psi_lab", "drag_drop", "matching", "ordering"].includes(form.questionType) && (
+                    <p className="text-xs text-amber-600 mt-1">⚠ This type requires interactive JSON data and is teacher-graded. The Correct Answer field is used as a reference only.</p>
                   )}
                 </div>
                 <div>
@@ -292,9 +311,28 @@ export default function AdminQuestions() {
                 )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Correct Answer * {form.questionType === "multiple_choice" ? "(Enter A, B, C, or D)" : "(Expected answer text)"}
+                    {form.questionType === "multiple_choice"
+                      ? "Correct Answer * (Enter A, B, C, or D)"
+                      : form.questionType === "drawing_canvas"
+                      ? "Part B Correct Answer * (auto-corrected written answer)"
+                      : "Correct Answer * (Expected answer text)"}
                   </label>
-                  <input type="text" value={form.correctAnswer} onChange={(e) => setForm({ ...form, correctAnswer: e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" placeholder={form.questionType === "multiple_choice" ? "A" : "Expected answer..."} />
+                  <input
+                    type="text"
+                    value={form.correctAnswer}
+                    onChange={(e) => setForm({ ...form, correctAnswer: e.target.value })}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                    placeholder={
+                      form.questionType === "multiple_choice"
+                        ? "A"
+                        : form.questionType === "drawing_canvas"
+                        ? "e.g. 'triangle' or '45 degrees' — students must write this exactly"
+                        : "Expected answer..."
+                    }
+                  />
+                  {form.questionType === "drawing_canvas" && (
+                    <p className="text-xs text-gray-400 mt-1">Leave blank if you want this question to be teacher-graded only (no auto-correction).</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Explanation (optional)</label>

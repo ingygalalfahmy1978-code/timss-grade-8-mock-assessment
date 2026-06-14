@@ -242,6 +242,8 @@ export const studentAnswers = mysqlTable("student_answers", {
   // Partial credit: 0, 1, or 2 points earned
   pointsEarned: int("points_earned").default(0).notNull(),
   isFlagged: boolean("is_flagged").default(false).notNull(),
+  // Part B: written answer for drawing_canvas questions (auto-corrected against question's correctAnswer)
+  drawingPartBAnswer: text("drawing_part_b_answer"),
   // Which session this answer belongs to
   session: mysqlEnum("session", ["math_session", "science_session"]),
   createdAt: timestamp("created_at").defaultNow().notNull(),

@@ -87,6 +87,7 @@ type SavedAnswer = {
   answerGiven: string | null;
   isFlagged: boolean;
   pointsEarned?: number;
+  drawingPartBAnswer?: string | null;
 };
 
 type ExamData = {
@@ -1147,6 +1148,7 @@ export default function ExamInterface() {
   const [phase, setPhase] = useState<"loading" | "session1" | "break" | "session2" | "submitting" | "error">("loading");
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [partBAnswers, setPartBAnswers] = useState<Record<number, string>>({});
   const [flagged, setFlagged] = useState<Set<number>>(new Set());
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [session1TimeSpent, setSession1TimeSpent] = useState(0);
@@ -1313,6 +1315,23 @@ export default function ExamInterface() {
         answerGiven: value,
         isFlagged: flagged.has(questionId),
         session: (sessionType || (phase === "session2" ? "science_session" : "math_session")) as "math_session" | "science_session",
+        drawingPartBAnswer: partBAnswers[questionId] ?? null,
+      });
+    }, 600);
+  };
+
+  const handlePartBChange = (questionId: number, value: string) => {
+    setPartBAnswers(prev => ({ ...prev, [questionId]: value }));
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      if (!examData) return;
+      saveAnswer.mutate({
+        attemptId: examData.attemptId,
+        questionId,
+        answerGiven: answers[questionId] ?? null,
+        isFlagged: flagged.has(questionId),
+        session: (phase === "session2" ? "science_session" : "math_session") as "math_session" | "science_session",
+        drawingPartBAnswer: value,
       });
     }, 600);
   };
@@ -1664,7 +1683,24 @@ export default function ExamInterface() {
 
               {/* Drawing Canvas */}
               {currentQ.questionType === "drawing_canvas" && interactiveData && (
-                <DrawingCanvasQuestion data={interactiveData} answer={currentAnswer} onChange={(v) => handleAnswerChange(currentQ.id, v)} />
+                <div className="space-y-4">
+                  <DrawingCanvasQuestion data={interactiveData} answer={currentAnswer} onChange={(v) => handleAnswerChange(currentQ.id, v)} />
+                  {/* Part B: written answer */}
+                  <div className="border-t border-slate-200 pt-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">Part B</span>
+                      <span className="text-sm font-medium text-slate-700">Written Answer</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-2">Write your answer in the box below. This will be automatically corrected.</p>
+                    <textarea
+                      value={partBAnswers[currentQ.id] ?? ""}
+                      onChange={(e) => handlePartBChange(currentQ.id, e.target.value)}
+                      placeholder="Write your answer here..."
+                      rows={3}
+                      className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:border-blue-500 resize-none text-sm leading-relaxed transition-colors"
+                    />
+                  </div>
+                </div>
               )}
 
               {/* Fallback: interactive question with no data — show textarea */}
