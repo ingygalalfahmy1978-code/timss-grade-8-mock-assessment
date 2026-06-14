@@ -8,6 +8,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { z } from "zod";
 import {
   assignExamToClass,
+  deleteExam,
   getExamClassAssignments,
   createClass,
   createExam,
@@ -672,6 +673,12 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    deleteExam: adminProcedure
+      .input(z.object({ examId: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteExam(input.examId);
+        return { success: true };
+      }),
     getExamWithQuestions: adminProcedure
       .input(z.object({ examId: z.number() }))
       .query(async ({ input }) => {

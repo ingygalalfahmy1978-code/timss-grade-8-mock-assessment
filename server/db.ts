@@ -308,6 +308,25 @@ export async function updateExam(id: number, data: Partial<typeof exams.$inferIn
   await db.update(exams).set(data).where(eq(exams.id, id));
 }
 
+export async function deleteExam(examId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  // Cascade delete in dependency order
+  // 1. Delete student answers for all attempts of this exam
+  const attempts = await db.select({ id: studentExamAttempts.id }).from(studentExamAttempts).where(eq(studentExamAttempts.examId, examId));
+  if (attempts.length > 0) {
+    const attemptIds = attempts.map((a) => a.id);
+    await db.delete(studentAnswers).where(inArray(studentAnswers.attemptId, attemptIds));
+    await db.delete(studentReports).where(inArray(studentReports.attemptId, attemptIds));
+    await db.delete(studentExamAttempts).where(eq(studentExamAttempts.examId, examId));
+  }
+  // 2. Delete class assignments
+  await db.delete(classExamAssignments).where(eq(classExamAssignments.examId, examId));
+  // 3. Delete exam questions
+  await db.delete(examQuestions).where(eq(examQuestions.examId, examId));
+  // 4. Delete the exam itself
+  await db.delete(exams).where(eq(exams.id, examId));
+}
 export async function addQuestionToExam(examId: number, questionId: number, orderIndex: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

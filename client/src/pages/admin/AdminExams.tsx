@@ -1,7 +1,7 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
 import { usePlatformAuth } from "@/hooks/usePlatformAuth";
-import { BookOpen, ChevronRight, Edit2, Plus, Users, CheckCircle, AlertCircle, X } from "lucide-react";
+import { BookOpen, ChevronRight, Edit2, Plus, Users, CheckCircle, AlertCircle, X, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -30,6 +30,16 @@ export default function AdminExams() {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", durationMinutes: 90 });
   const [assignExamId, setAssignExamId] = useState<number | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const deleteExam = trpc.admin.deleteExam.useMutation({
+    onSuccess: () => {
+      utils.admin.listExams.invalidate();
+      setDeleteConfirmId(null);
+      toast.success("Exam deleted successfully.");
+    },
+    onError: () => toast.error("Failed to delete exam."),
+  });
+  const examToDelete = exams?.find((e) => e.id === deleteConfirmId);
 
   // Fetch assignments for the currently selected exam
   const { data: examAssignments } = trpc.admin.getExamAssignments.useQuery(
@@ -94,6 +104,33 @@ export default function AdminExams() {
             <span className="flex items-center gap-1"><span className="w-5 h-5 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">3</span> Click <strong>Assign to Classes</strong> and select which classes can take it</span>
           </div>
         </div>
+
+        {/* Delete Confirmation Modal */}
+        {deleteConfirmId !== null && examToDelete && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+              <div className="px-6 py-5">
+                <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
+                  <Trash2 className="w-6 h-6 text-red-600" />
+                </div>
+                <h3 className="font-semibold text-gray-900 text-lg">Delete Exam?</h3>
+                <p className="text-sm text-gray-600 mt-2">
+                  Are you sure you want to delete <strong>{examToDelete.name}</strong>? This will permanently remove the exam, all its questions, class assignments, and any student attempts and reports. This action cannot be undone.
+                </p>
+              </div>
+              <div className="px-6 py-4 border-t border-gray-100 flex gap-3 justify-end">
+                <button onClick={() => setDeleteConfirmId(null)} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+                <button
+                  onClick={() => deleteExam.mutate({ examId: deleteConfirmId })}
+                  disabled={deleteExam.isPending}
+                  className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleteExam.isPending ? "Deleting..." : "Delete Exam"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Create Exam Modal */}
         {showAdd && (
@@ -236,6 +273,13 @@ export default function AdminExams() {
                         }`}
                       >
                         {exam.isPublished ? "Unpublish" : "Publish"}
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirmId(exam.id)}
+                        className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
+                        title="Delete exam"
+                      >
+                        <Trash2 className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
