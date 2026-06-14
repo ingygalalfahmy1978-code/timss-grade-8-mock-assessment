@@ -27,7 +27,9 @@ import TeacherClassDetail from "./pages/teacher/TeacherClassDetail";
 import TeacherReports from "./pages/teacher/TeacherReports";
 import DrawingReview from "./pages/teacher/DrawingReview";
 import AnswerReview from "./pages/teacher/AnswerReview";
+import TeacherAnalytics from "./pages/teacher/TeacherAnalytics";
 
+import StudentProgress from "./pages/student/StudentProgress";
 // Student pages
 import StudentDashboard from "./pages/student/StudentDashboard";
 import ExamInstructions from "./pages/student/ExamInstructions";
@@ -137,6 +139,9 @@ function Router() {
       <Route path="/teacher/answer-review">
         {() => <ProtectedRoute component={AnswerReview} allowedRoles={["teacher", "admin"]} />}
       </Route>
+      <Route path="/teacher/analytics">
+        {() => <ProtectedRoute component={TeacherAnalytics} allowedRoles={["teacher", "admin"]} />}
+      </Route>
 
       {/* Student routes */}
       <Route path="/student">
@@ -156,6 +161,9 @@ function Router() {
       </Route>
       <Route path="/student/results">
         {() => <ProtectedRoute component={MyResults} allowedRoles={["student"]} />}
+      </Route>
+      <Route path="/student/progress">
+        {() => <ProtectedRoute component={StudentProgress} allowedRoles={["student"]} />}
       </Route>
 
       <Route path="/404" component={NotFound} />

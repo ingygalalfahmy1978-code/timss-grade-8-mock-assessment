@@ -178,3 +178,19 @@
 - [x] Drawing questions: add Part B where student writes answer (auto-corrected against teacher-set answer)
 - [x] Update exam taking UI to show Part B text input for drawing questions
 - [x] Update auto-correction logic to handle Part B drawing answers
+
+## Phase 17: Progress Charts & Teacher Analytics
+- [ ] Backend: student.getProgressData — return all submitted attempts with scores, math%, science%, domains
+- [ ] Backend: teacher.getClassAnalytics — class averages, pass rates, domain breakdowns, per-student rows
+- [ ] Backend: teacher.getStudentAnalytics — single student progress across all exams (for teacher filter)
+- [ ] Student dashboard: bar chart (score % per mock) + radar chart (domain breakdown)
+- [ ] Student dashboard: progress summary cards (best score, average, trend arrow)
+- [ ] Teacher analytics page at /teacher/analytics with class selector
+- [ ] Teacher analytics: class overview cards (avg score, pass rate, top/bottom students)
+- [ ] Teacher analytics: bar chart comparing class average per mock
+- [ ] Teacher analytics: domain radar chart for class average
+- [ ] Teacher analytics: per-student table with sparkline scores
+- [ ] Teacher analytics: filter by student (show individual progress charts)
+- [ ] Teacher analytics: export class analytics as PDF
+- [ ] Add Analytics link to teacher sidebar navigation
+- [ ] Add Progress link to student sidebar navigation

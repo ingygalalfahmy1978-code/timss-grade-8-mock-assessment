@@ -2,6 +2,7 @@ import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import { cn } from "@/lib/utils";
 import {
   BookOpen,
+  BarChart2,
   ChevronDown,
   ClipboardList,
   GraduationCap,
@@ -43,6 +44,7 @@ export default function PlatformLayout({ children, title }: PlatformLayoutProps)
     { label: "Dashboard", href: "/teacher", icon: <LayoutDashboard className="w-4 h-4" /> },
     { label: "My Classes", href: "/teacher/classes", icon: <BookOpen className="w-4 h-4" /> },
     { label: "Reports", href: "/teacher/reports", icon: <ClipboardList className="w-4 h-4" /> },
+    { label: "Analytics", href: "/teacher/analytics", icon: <BarChart2 className="w-4 h-4" /> },
   ];
 
   const navItems = user?.role === "admin" ? adminNav : teacherNav;

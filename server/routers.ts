@@ -1,6 +1,6 @@
 import { COOKIE_NAME } from "@shared/const";
-import { and, eq } from "drizzle-orm";
-import { studentExamAttempts } from "../drizzle/schema";
+import { and, eq, inArray } from "drizzle-orm";
+import { studentExamAttempts, exams, platformUsers, studentClasses } from "../drizzle/schema";
 import { getDb } from "./db";
 import { TRPCError } from "@trpc/server";
 import { createHash } from "crypto";
@@ -1227,10 +1227,105 @@ export const appRouter = router({
           title: "All Results Published",
           content: `All results for class "${cls?.name ?? ""}" on exam "${exam?.name ?? ""}" have been published.`,
         }).catch(() => {});
-        return { success: true };
+                return { success: true };
+      }),
+
+    // ── Analytics ──────────────────────────────────────────────────────────
+    // Class analytics: per-exam averages, pass rates, domain breakdowns, per-student rows
+    getClassAnalytics: teacherOrAdminProcedure
+      .input(z.object({ classId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const cls = await getClassById(input.classId);
+        if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
+        const students = await getStudentsInClass(input.classId);
+        const assignments = await getClassExamAssignments(input.classId);
+        const activeExamIds = assignments.filter((a) => a.isActive).map((a) => a.examId);
+        if (activeExamIds.length === 0) return { cls, students, examStats: [], studentRows: [] };
+        const examRows = await db.select({ id: exams.id, name: exams.name }).from(exams).where(inArray(exams.id, activeExamIds));
+        const examMap = new Map(examRows.map((e) => [e.id, e.name]));
+        // Get all submitted published attempts for this class
+        const allAttempts = await db
+          .select()
+          .from(studentExamAttempts)
+          .where(
+            and(
+              eq(studentExamAttempts.classId, input.classId),
+              eq(studentExamAttempts.status, "submitted")
+            )
+          );
+        // Per-exam statistics
+        const examStats = activeExamIds.map((examId) => {
+          const attempts = allAttempts.filter((a) => a.examId === examId);
+          const published = attempts.filter((a) => a.resultsPublished);
+          const scores = published.map((a) =>
+            a.totalMaxPoints && a.totalMaxPoints > 0 ? Math.round((a.totalScore ?? 0) / a.totalMaxPoints * 100) : 0
+          );
+          const avg = scores.length > 0 ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length) : null;
+          const passRate = scores.length > 0 ? Math.round(scores.filter((s) => s >= 60).length / scores.length * 100) : null;
+          const mathScores = published.map((a) =>
+            a.mathMaxPoints && a.mathMaxPoints > 0 ? Math.round((a.mathScore ?? 0) / a.mathMaxPoints * 100) : 0
+          );
+          const sciScores = published.map((a) =>
+            a.scienceMaxPoints && a.scienceMaxPoints > 0 ? Math.round((a.scienceScore ?? 0) / a.scienceMaxPoints * 100) : 0
+          );
+          const mathAvg = mathScores.length > 0 ? Math.round(mathScores.reduce((s, v) => s + v, 0) / mathScores.length) : null;
+          const sciAvg = sciScores.length > 0 ? Math.round(sciScores.reduce((s, v) => s + v, 0) / sciScores.length) : null;
+          return { examId, examName: examMap.get(examId) ?? `Exam ${examId}`, totalAttempts: attempts.length, publishedAttempts: published.length, avgScore: avg, passRate, mathAvg, sciAvg };
+        });
+        // Per-student rows with scores per exam
+        const studentRows = students.map((s) => {
+          const studentAttempts = allAttempts.filter((a) => a.studentId === s.id && a.resultsPublished);
+          const examScores: Record<number, { pct: number; mathPct: number; sciPct: number } | null> = {};
+          for (const examId of activeExamIds) {
+            const a = studentAttempts.find((at) => at.examId === examId);
+            if (a) {
+              examScores[examId] = {
+                pct: a.totalMaxPoints && a.totalMaxPoints > 0 ? Math.round((a.totalScore ?? 0) / a.totalMaxPoints * 100) : 0,
+                mathPct: a.mathMaxPoints && a.mathMaxPoints > 0 ? Math.round((a.mathScore ?? 0) / a.mathMaxPoints * 100) : 0,
+                sciPct: a.scienceMaxPoints && a.scienceMaxPoints > 0 ? Math.round((a.scienceScore ?? 0) / a.scienceMaxPoints * 100) : 0,
+              };
+            } else {
+              examScores[examId] = null;
+            }
+          }
+          const scores = Object.values(examScores).filter(Boolean).map((v) => v!.pct);
+          const avgPct = scores.length > 0 ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length) : null;
+          return { studentId: s.id, studentName: s.name, username: s.username, examScores, avgPct };
+        });
+        return { cls, students, examStats, studentRows, activeExamIds, examMap: Object.fromEntries(examMap) };
+      }),
+
+    // Single-student progress for teacher view
+    getStudentProgress: teacherOrAdminProcedure
+      .input(z.object({ studentId: z.number(), classId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const attempts = await db
+          .select()
+          .from(studentExamAttempts)
+          .where(
+            and(
+              eq(studentExamAttempts.studentId, input.studentId),
+              eq(studentExamAttempts.classId, input.classId),
+              eq(studentExamAttempts.status, "submitted")
+            )
+          );
+        if (attempts.length === 0) return [];
+        const examIds = Array.from(new Set(attempts.map((a) => a.examId)));
+        const examRows = await db.select({ id: exams.id, name: exams.name }).from(exams).where(inArray(exams.id, examIds));
+        const examMap = new Map(examRows.map((e) => [e.id, e.name]));
+        return attempts.map((a) => ({
+          ...a,
+          examName: examMap.get(a.examId) ?? `Exam ${a.examId}`,
+          percentage: a.totalMaxPoints && a.totalMaxPoints > 0 ? Math.round((a.totalScore ?? 0) / a.totalMaxPoints * 100) : 0,
+          mathPercentage: a.mathMaxPoints && a.mathMaxPoints > 0 ? Math.round((a.mathScore ?? 0) / a.mathMaxPoints * 100) : 0,
+          sciencePercentage: a.scienceMaxPoints && a.scienceMaxPoints > 0 ? Math.round((a.scienceScore ?? 0) / a.scienceMaxPoints * 100) : 0,
+        }));
       }),
   }),
-
   // ─── Student ──────────────────────────────────────────────────────────────
   student: router({
     availableExams: platformProcedure.query(async ({ ctx }) => {
@@ -1649,6 +1744,45 @@ export const appRouter = router({
       return getReportsByStudent(ctx.platformUser.id);
     }),
 
+    // Progress data: all submitted published attempts with scores and domain breakdown
+    getMyProgress: platformProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const attempts = await db
+        .select({
+          id: studentExamAttempts.id,
+          examId: studentExamAttempts.examId,
+          status: studentExamAttempts.status,
+          resultsPublished: studentExamAttempts.resultsPublished,
+          totalScore: studentExamAttempts.totalScore,
+          totalMaxPoints: studentExamAttempts.totalMaxPoints,
+          mathScore: studentExamAttempts.mathScore,
+          mathMaxPoints: studentExamAttempts.mathMaxPoints,
+          scienceScore: studentExamAttempts.scienceScore,
+          scienceMaxPoints: studentExamAttempts.scienceMaxPoints,
+          domainBreakdown: studentExamAttempts.domainBreakdown,
+          submittedAt: studentExamAttempts.submittedAt,
+        })
+        .from(studentExamAttempts)
+        .where(
+          and(
+            eq(studentExamAttempts.studentId, ctx.platformUser.id),
+            eq(studentExamAttempts.status, "submitted"),
+            eq(studentExamAttempts.resultsPublished, true)
+          )
+        );
+      if (attempts.length === 0) return [];
+      const examIds = Array.from(new Set(attempts.map((a) => a.examId)));
+      const examRows = await db.select({ id: exams.id, name: exams.name }).from(exams).where(inArray(exams.id, examIds));
+      const examMap = new Map(examRows.map((e) => [e.id, e.name]));
+      return attempts.map((a) => ({
+        ...a,
+        examName: examMap.get(a.examId) ?? `Exam ${a.examId}`,
+        percentage: a.totalMaxPoints && a.totalMaxPoints > 0 ? Math.round((a.totalScore ?? 0) / a.totalMaxPoints * 100) : 0,
+        mathPercentage: a.mathMaxPoints && a.mathMaxPoints > 0 ? Math.round((a.mathScore ?? 0) / a.mathMaxPoints * 100) : 0,
+        sciencePercentage: a.scienceMaxPoints && a.scienceMaxPoints > 0 ? Math.round((a.scienceScore ?? 0) / a.scienceMaxPoints * 100) : 0,
+      }));
+    }),
     // Get a single attempt's full result — only if teacher has published it
     getMyResult: platformProcedure
       .input(z.object({ attemptId: z.number() }))

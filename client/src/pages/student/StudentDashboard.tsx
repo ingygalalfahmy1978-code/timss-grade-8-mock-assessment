@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { usePlatformAuth } from "@/hooks/usePlatformAuth";
-import { BookOpen, Clock, LogOut, AlertCircle, BarChart2 } from "lucide-react";
+import { BookOpen, Clock, LogOut, AlertCircle, BarChart2, TrendingUp } from "lucide-react";
 import { Link } from "wouter";
 
 export default function StudentDashboard() {
@@ -36,6 +36,12 @@ export default function StudentDashboard() {
               <div className="text-sm font-medium">{user?.name}</div>
               <div className="text-white/50 text-xs font-mono">{(user as any)?.username}</div>
             </div>
+            <Link href="/student/progress">
+              <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors">
+                <TrendingUp className="w-3.5 h-3.5" />
+                My Progress
+              </button>
+            </Link>
             <Link href="/student/results">
               <button
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors"
