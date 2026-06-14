@@ -332,6 +332,15 @@ export async function setExamQuestions(examId: number, questionIds: number[]) {
 }
 
 // ─── Class Exam Assignments ───────────────────────────────────────────────────
+export async function getExamClassAssignments(examId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(classExamAssignments)
+    .where(eq(classExamAssignments.examId, examId));
+}
+
 export async function getClassExamAssignments(classId: number) {
   const db = await getDb();
   if (!db) return [];

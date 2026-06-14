@@ -8,6 +8,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { z } from "zod";
 import {
   assignExamToClass,
+  getExamClassAssignments,
   createClass,
   createExam,
   createPlatformUser,
@@ -684,13 +685,24 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    assignExamToClass: adminProcedure
+        assignExamToClass: adminProcedure
       .input(z.object({ classId: z.number(), examId: z.number() }))
       .mutation(async ({ input, ctx }) => {
         await assignExamToClass(input.classId, input.examId, ctx.platformUser.id);
         return { success: true };
       }),
-
+    deactivateExamFromClass: adminProcedure
+      .input(z.object({ classId: z.number(), examId: z.number() }))
+      .mutation(async ({ input }) => {
+        await deactivateExamForClass(input.classId, input.examId);
+        return { success: true };
+      }),
+    getExamAssignments: adminProcedure
+      .input(z.object({ examId: z.number() }))
+      .query(async ({ input }) => {
+        const assignments = await getExamClassAssignments(input.examId);
+        return assignments;
+      }),
     getClassReports: adminProcedure
       .input(z.object({ classId: z.number() }))
       .query(async ({ input }) => {
