@@ -524,8 +524,29 @@ export async function getAnswersForAttempt(attemptId: number) {
   const db = await getDb();
   if (!db) return [];
   return db
-    .select()
+    .select({
+      // student_answers fields
+      id: studentAnswers.id,
+      attemptId: studentAnswers.attemptId,
+      questionId: studentAnswers.questionId,
+      answerGiven: studentAnswers.answerGiven,
+      isCorrect: studentAnswers.isCorrect,
+      pointsEarned: studentAnswers.pointsEarned,
+      isFlagged: studentAnswers.isFlagged,
+      session: studentAnswers.session,
+      createdAt: studentAnswers.createdAt,
+      updatedAt: studentAnswers.updatedAt,
+      // joined question fields
+      questionText: questions.questionText,
+      questionType: questions.questionType,
+      options: questions.options,
+      correctAnswer: questions.correctAnswer,
+      explanation: questions.explanation,
+      imageUrl: questions.imageUrl,
+      maxPoints: questions.maxPoints,
+    })
     .from(studentAnswers)
+    .leftJoin(questions, eq(studentAnswers.questionId, questions.id))
     .where(eq(studentAnswers.attemptId, attemptId));
 }
 

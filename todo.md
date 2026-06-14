@@ -153,3 +153,10 @@
 - [x] Extract and seed questions from Grade 8 Biology, Chemistry, Physics workbooks
 - [x] All 6 mocks now have 56-61 questions each (distributed from booklets)
 - [x] All 40 tests passing after changes
+
+## Phase 14: Student Wrong-Answer Review
+- [x] Join questions table in getAnswersForAttempt (returns questionText, options, correctAnswer, explanation, imageUrl, maxPoints)
+- [x] Add "Review Wrong" tab to MyResults page showing only incorrect answers
+- [x] WrongAnswerReview component: full question text, MC options highlighted (correct=green, wrong=red), explanation panel, teacher feedback
+- [x] "All Questions" tab: inline explanation shown when expanding a wrong answer
+- [x] Hint shown in compact list when explanation is available ("Explanation available")
