@@ -1,6 +1,6 @@
 /**
- * Tests for the scoreAnswer function and drawing review logic.
- * These tests verify that all question types are scored correctly.
+ * Tests for the scoreAnswer function.
+ * These tests verify that every active assessment question type is scored automatically.
  */
 import { describe, it, expect } from "vitest";
 
@@ -115,10 +115,6 @@ function scoreAnswer(
     } catch {
       return { isCorrect: false, pointsEarned: 0 };
     }
-  }
-
-  if (questionType === "drawing_canvas") {
-    return { isCorrect: false, pointsEarned: 0 };
   }
 
   if (questionType === "partial_credit_short_answer") {
@@ -258,15 +254,6 @@ describe("scoreAnswer – psi_lab", () => {
   it("no tasks correct earns 0", () => {
     const given = JSON.stringify({ task1: "wrong", task2: "wrong" });
     expect(scoreAnswer("psi_lab", given, correct, 2)).toEqual({ isCorrect: false, pointsEarned: 0 });
-  });
-});
-
-describe("scoreAnswer – drawing_canvas", () => {
-  it("always returns 0 pending teacher review", () => {
-    expect(scoreAnswer("drawing_canvas", "data:image/png;base64,abc123", "", 2)).toEqual({
-      isCorrect: false,
-      pointsEarned: 0,
-    });
   });
 });
 

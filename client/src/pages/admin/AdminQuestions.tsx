@@ -13,12 +13,6 @@ const QUESTION_TYPES = [
   { value: "multiple_choice", label: "Multiple Choice" },
   { value: "short_answer", label: "Short Answer" },
   { value: "partial_credit_short_answer", label: "Partial Credit Short Answer (0-2 pts)" },
-  { value: "drag_drop", label: "Drag & Drop" },
-  { value: "matching", label: "Matching" },
-  { value: "ordering", label: "Ordering" },
-  { value: "drawing_canvas", label: "Drawing Canvas" },
-  { value: "pattern_interaction", label: "Pattern Interaction" },
-  { value: "psi_lab", label: "PSI Lab (Problem Solving & Inquiry)" },
 ] as const;
 
 const SCIENCE_SUBDOMAINS: Record<string, string[]> = {
@@ -272,25 +266,8 @@ export default function AdminQuestions() {
                       <option value="short_answer">Short Answer (exact match)</option>
                       <option value="partial_credit_short_answer">Short Answer — Partial Credit (0–2 pts)</option>
                     </optgroup>
-                    <optgroup label="Drawing (Part A = canvas, Part B = written answer)">
-                      <option value="drawing_canvas">Drawing Canvas + Written Answer (Part B)</option>
-                    </optgroup>
-                    <optgroup label="Interactive (teacher-graded)">
-                      <option value="drag_drop">Drag &amp; Drop</option>
-                      <option value="matching">Matching</option>
-                      <option value="ordering">Ordering</option>
-                      <option value="pattern_interaction">Pattern Interaction</option>
-                      <option value="psi_lab">PSI Lab (Problem Solving &amp; Inquiry)</option>
-                    </optgroup>
                   </select>
-                  {form.questionType === "drawing_canvas" && (
-                    <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
-                      <strong>Drawing + Written Answer:</strong> Students draw their answer on a canvas (Part A) and also write a short text answer (Part B). The written Part B answer is auto-corrected against the Correct Answer you set below.
-                    </div>
-                  )}
-                  {["pattern_interaction", "psi_lab", "drag_drop", "matching", "ordering"].includes(form.questionType) && (
-                    <p className="text-xs text-amber-600 mt-1">⚠ This type requires interactive JSON data and is teacher-graded. The Correct Answer field is used as a reference only.</p>
-                  )}
+                  <p className="text-xs text-blue-600 mt-1">Every new question is automatically corrected after submission. Choose multiple choice for fixed options, or short answer for a teacher-set expected response.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Question Text *</label>
@@ -313,8 +290,6 @@ export default function AdminQuestions() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {form.questionType === "multiple_choice"
                       ? "Correct Answer * (Enter A, B, C, or D)"
-                      : form.questionType === "drawing_canvas"
-                      ? "Part B Correct Answer * (auto-corrected written answer)"
                       : "Correct Answer * (Expected answer text)"}
                   </label>
                   <input
@@ -325,14 +300,9 @@ export default function AdminQuestions() {
                     placeholder={
                       form.questionType === "multiple_choice"
                         ? "A"
-                        : form.questionType === "drawing_canvas"
-                        ? "e.g. 'triangle' or '45 degrees' — students must write this exactly"
                         : "Expected answer..."
                     }
                   />
-                  {form.questionType === "drawing_canvas" && (
-                    <p className="text-xs text-gray-400 mt-1">Leave blank if you want this question to be teacher-graded only (no auto-correction).</p>
-                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Explanation (optional)</label>
@@ -394,7 +364,6 @@ export default function AdminQuestions() {
                          q.questionType === "drag_drop" ? "D&D" :
                          q.questionType === "matching" ? "Match" :
                          q.questionType === "ordering" ? "Order" :
-                         q.questionType === "drawing_canvas" ? "Draw" :
                          q.questionType === "pattern_interaction" ? "Pattern" :
                          q.questionType === "psi_lab" ? "PSI" : q.questionType}
                       </td>

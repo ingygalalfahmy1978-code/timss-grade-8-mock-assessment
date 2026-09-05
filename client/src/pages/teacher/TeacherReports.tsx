@@ -104,13 +104,6 @@ export default function TeacherReports() {
               <Pencil className="w-4 h-4" />
               Review Answers
             </button>
-            <button
-              onClick={() => navigate("/teacher/drawing-review")}
-              className="flex items-center gap-2 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              <Pencil className="w-4 h-4" />
-              Review Drawings
-            </button>
             {selectedClassId && (
               <button
                 onClick={handleDownloadClassReport}

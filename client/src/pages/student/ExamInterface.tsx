@@ -52,7 +52,7 @@ interface InteractiveData {
   // psi_lab (seed format)
   tasks?: Array<{ id: string; instruction: string; type: "multiple_choice" | "short_answer"; choices?: string[]; correctAnswer?: string }>;
   variables?: Array<{ name: string; unit?: string; values: (string | number)[] }>;
-  // drawing_canvas
+  // Legacy fields retained only for backward-compatible parsing of historic answers.
   canvasPrompt?: string;
   prompt?: string;
   backgroundImage?: string;
@@ -87,7 +87,6 @@ type SavedAnswer = {
   answerGiven: string | null;
   isFlagged: boolean;
   pointsEarned?: number;
-  drawingPartBAnswer?: string | null;
 };
 
 type ExamData = {
@@ -1148,7 +1147,6 @@ export default function ExamInterface() {
   const [phase, setPhase] = useState<"loading" | "session1" | "break" | "session2" | "submitting" | "error">("loading");
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [partBAnswers, setPartBAnswers] = useState<Record<number, string>>({});
   const [flagged, setFlagged] = useState<Set<number>>(new Set());
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [session1TimeSpent, setSession1TimeSpent] = useState(0);
@@ -1315,23 +1313,6 @@ export default function ExamInterface() {
         answerGiven: value,
         isFlagged: flagged.has(questionId),
         session: (sessionType || (phase === "session2" ? "science_session" : "math_session")) as "math_session" | "science_session",
-        drawingPartBAnswer: partBAnswers[questionId] ?? null,
-      });
-    }, 600);
-  };
-
-  const handlePartBChange = (questionId: number, value: string) => {
-    setPartBAnswers(prev => ({ ...prev, [questionId]: value }));
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-      if (!examData) return;
-      saveAnswer.mutate({
-        attemptId: examData.attemptId,
-        questionId,
-        answerGiven: answers[questionId] ?? null,
-        isFlagged: flagged.has(questionId),
-        session: (phase === "session2" ? "science_session" : "math_session") as "math_session" | "science_session",
-        drawingPartBAnswer: value,
       });
     }, 600);
   };
@@ -1619,7 +1600,6 @@ export default function ExamInterface() {
                 {currentQ.questionType === "ordering" && "Ordering — arrange items in the correct sequence"}
                 {currentQ.questionType === "pattern_interaction" && "Pattern — complete the missing elements"}
                 {currentQ.questionType === "psi_lab" && "Lab Investigation — follow the steps and record your findings"}
-                {currentQ.questionType === "drawing_canvas" && "Drawing — use the canvas to draw your answer"}
                 {currentQ.questionType === "hotspot" && "Select the correct region"}
               </p>
 
@@ -1681,36 +1661,10 @@ export default function ExamInterface() {
                 <PSILabQuestion data={interactiveData} answer={currentAnswer} onChange={(v) => handleAnswerChange(currentQ.id, v)} />
               )}
 
-              {/* Drawing Canvas */}
-              {currentQ.questionType === "drawing_canvas" && interactiveData && (
-                <div className="space-y-4">
-                  <DrawingCanvasQuestion data={interactiveData} answer={currentAnswer} onChange={(v) => handleAnswerChange(currentQ.id, v)} />
-                  {/* Part B: written answer */}
-                  <div className="border-t border-slate-200 pt-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">Part B</span>
-                      <span className="text-sm font-medium text-slate-700">Written Answer</span>
-                    </div>
-                    <p className="text-xs text-slate-500 mb-2">Write your answer in the box below. This will be automatically corrected.</p>
-                    <textarea
-                      value={partBAnswers[currentQ.id] ?? ""}
-                      onChange={(e) => handlePartBChange(currentQ.id, e.target.value)}
-                      placeholder="Write your answer here..."
-                      rows={3}
-                      className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:border-blue-500 resize-none text-sm leading-relaxed transition-colors"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Fallback: interactive question with no data — show textarea */}
-              {["drag_drop", "matching", "ordering", "pattern_interaction", "psi_lab", "drawing_canvas"].includes(currentQ.questionType) && !interactiveData && (
-                <div className="mt-3">
-                  <textarea value={currentAnswer} onChange={(e) => handleAnswerChange(currentQ.id, e.target.value)}
-                    placeholder="Type your answer here. Show your working where applicable."
-                    rows={5}
-                    className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:border-blue-500 resize-none text-sm leading-relaxed transition-colors" />
-                  <p className="text-xs text-slate-400 mt-1.5">Write your answer clearly.</p>
+              {/* Interactive items must always have their automatic response data configured. */}
+              {["drag_drop", "matching", "ordering", "pattern_interaction", "psi_lab"].includes(currentQ.questionType) && !interactiveData && (
+                <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  This question is unavailable because its automatic response data is incomplete. Please notify your teacher before submitting.
                 </div>
               )}
             </div>

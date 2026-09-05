@@ -25,7 +25,6 @@ import TeacherDashboard from "./pages/teacher/TeacherDashboard";
 import TeacherClasses from "./pages/teacher/TeacherClasses";
 import TeacherClassDetail from "./pages/teacher/TeacherClassDetail";
 import TeacherReports from "./pages/teacher/TeacherReports";
-import DrawingReview from "./pages/teacher/DrawingReview";
 import AnswerReview from "./pages/teacher/AnswerReview";
 import TeacherAnalytics from "./pages/teacher/TeacherAnalytics";
 
@@ -132,9 +131,6 @@ function Router() {
       </Route>
       <Route path="/teacher/reports">
         {() => <ProtectedRoute component={TeacherReports} allowedRoles={["teacher", "admin"]} />}
-      </Route>
-      <Route path="/teacher/drawing-review">
-        {() => <ProtectedRoute component={DrawingReview} allowedRoles={["teacher", "admin"]} />}
       </Route>
       <Route path="/teacher/answer-review">
         {() => <ProtectedRoute component={AnswerReview} allowedRoles={["teacher", "admin"]} />}

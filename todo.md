@@ -180,17 +180,35 @@
 - [x] Update auto-correction logic to handle Part B drawing answers
 
 ## Phase 17: Progress Charts & Teacher Analytics
-- [ ] Backend: student.getProgressData — return all submitted attempts with scores, math%, science%, domains
-- [ ] Backend: teacher.getClassAnalytics — class averages, pass rates, domain breakdowns, per-student rows
-- [ ] Backend: teacher.getStudentAnalytics — single student progress across all exams (for teacher filter)
-- [ ] Student dashboard: bar chart (score % per mock) + radar chart (domain breakdown)
-- [ ] Student dashboard: progress summary cards (best score, average, trend arrow)
-- [ ] Teacher analytics page at /teacher/analytics with class selector
-- [ ] Teacher analytics: class overview cards (avg score, pass rate, top/bottom students)
-- [ ] Teacher analytics: bar chart comparing class average per mock
-- [ ] Teacher analytics: domain radar chart for class average
-- [ ] Teacher analytics: per-student table with sparkline scores
-- [ ] Teacher analytics: filter by student (show individual progress charts)
-- [ ] Teacher analytics: export class analytics as PDF
-- [ ] Add Analytics link to teacher sidebar navigation
-- [ ] Add Progress link to student sidebar navigation
+- [x] Backend: student.getProgressData — return all submitted attempts with scores, math%, science%, domains
+- [x] Backend: teacher.getClassAnalytics — class averages, pass rates, domain breakdowns, per-student rows
+- [x] Backend: teacher.getStudentAnalytics — single student progress across all exams (for teacher filter)
+- [x] Student Progress page: bar chart (score % per mock) + radar chart (domain breakdown)
+- [x] Student Progress page: progress summary cards (best score, average, trend arrow)
+- [x] Teacher analytics page at /teacher/analytics with class selector
+- [x] Teacher analytics: class overview cards (avg score, pass rate, top/bottom students)
+- [x] Teacher analytics: bar chart comparing class average per mock
+- [x] Teacher analytics: domain radar chart for class average
+- [x] Teacher analytics: per-student score matrix with drill-down to individual progress
+- [x] Teacher analytics: filter by student (show individual progress charts)
+- [x] Teacher analytics: export class analytics as PDF
+- [x] Add Analytics link to teacher sidebar navigation
+- [x] Add My Progress button to the student dashboard header
+
+## Phase 18: Fully Automated Assessment and Subject Analysis
+- [x] Audit all active drawing questions and replace them with automatically scored alternatives
+- [x] Remove drawing-canvas options from the question editor and student exam interface
+- [x] Verify every active question type has a deterministic automatic scoring path
+- [x] Add Mathematics and Science analysis tabs to the student results review
+- [x] Show per-subject scores, domain strengths, improvement targets, and wrong-answer review in each tab
+- [x] Verify login, exam visibility, auto-scoring, results publishing, and PDF download end to end
+
+## Phase 19: Close Remaining Automated Assessment Gaps
+- [x] Remove obsolete drawing-canvas rendering and drawing-review paths from the student and teacher interfaces
+- [x] Add an explicit per-subject Improvement Targets panel based on weakest domains and incorrect questions
+- [x] Re-verify post-change exam visibility and published-result access with the live data model
+
+## Phase 20: Student-Facing Access Verification
+- [x] Verify assigned active exams through the student available-exams procedure
+- [x] Verify published-result access and unpublished-result blocking through the student result procedure
+- [x] Repair STD001’s stale individual exam assignment and re-test the available-exams procedure

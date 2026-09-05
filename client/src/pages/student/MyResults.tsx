@@ -33,6 +33,9 @@ type Answer = {
   maxPoints: number | null;
   teacherFeedback: string | null;
   session: string;
+  subject: "Math" | "Science" | null;
+  contentDomain: string | null;
+  scienceSubDomain: string | null;
 };
 
 type ReportData = {
@@ -78,6 +81,161 @@ function resolveCorrectLabel(ans: Answer): string {
     if (opt) return `${opt.id}. ${opt.text}`;
   }
   return ans.correctAnswer;
+}
+
+function isFullyCorrect(ans: Answer): boolean {
+  return ans.isCorrect === true || (
+    ans.pointsEarned !== null &&
+    ans.maxPoints !== null &&
+    ans.pointsEarned >= ans.maxPoints
+  );
+}
+
+function isIncorrectOrPartial(ans: Answer): boolean {
+  return !isFullyCorrect(ans);
+}
+
+function SubjectAnalysisPanel({
+  subject,
+  answers,
+}: {
+  subject: "Mathematics" | "Science";
+  answers: Answer[];
+}) {
+  const earned = answers.reduce((total, answer) => total + (answer.pointsEarned ?? 0), 0);
+  const max = answers.reduce((total, answer) => total + (answer.maxPoints ?? 1), 0);
+  const percentage = max > 0 ? Math.round((earned / max) * 100) : 0;
+  const wrong = answers.filter(isIncorrectOrPartial);
+  const correct = answers.filter(isFullyCorrect).length;
+  const domainStats = Array.from(
+    answers.reduce((domains, answer) => {
+      const label = answer.scienceSubDomain || answer.contentDomain || "General skills";
+      const current = domains.get(label) ?? { earned: 0, max: 0, questions: 0 };
+      current.earned += answer.pointsEarned ?? 0;
+      current.max += answer.maxPoints ?? 1;
+      current.questions += 1;
+      domains.set(label, current);
+      return domains;
+    }, new Map<string, { earned: number; max: number; questions: number }>())
+  ).map(([label, values]) => ({
+    label,
+    ...values,
+    percentage: values.max > 0 ? Math.round((values.earned / values.max) * 100) : 0,
+  })).sort((a, b) => a.percentage - b.percentage);
+  const improvementTargets = domainStats.filter((domain) => domain.percentage < 70).slice(0, 2);
+
+  const performanceMessage = percentage >= 75
+    ? "Strong performance — keep extending your reasoning with the review questions below."
+    : percentage >= 50
+    ? "Developing well — focus first on the domains marked for review."
+    : "Start with the priority review questions, then revisit each domain in order.";
+
+  return (
+    <div className="p-4 sm:p-6 space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-xl bg-slate-900 text-white p-4">
+          <div className="text-2xl font-bold">{percentage}%</div>
+          <div className="text-xs text-slate-300 mt-1">{subject} score</div>
+        </div>
+        <div className="rounded-xl bg-green-50 border border-green-200 p-4">
+          <div className="text-2xl font-bold text-green-700">{correct}</div>
+          <div className="text-xs text-green-700 mt-1">Fully correct</div>
+        </div>
+        <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
+          <div className="text-2xl font-bold text-amber-700">{wrong.length}</div>
+          <div className="text-xs text-amber-700 mt-1">Review priority</div>
+        </div>
+        <div className="rounded-xl bg-blue-50 border border-blue-200 p-4">
+          <div className="text-2xl font-bold text-blue-700">{earned}/{max}</div>
+          <div className="text-xs text-blue-700 mt-1">Points earned</div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold">{subject === "Mathematics" ? "M" : "S"}</div>
+          <div>
+            <h4 className="font-semibold text-slate-900">{subject} performance map</h4>
+            <p className="text-sm text-slate-600 mt-1">{performanceMessage}</p>
+          </div>
+        </div>
+        <div className="mt-4 space-y-3">
+          {domainStats.map((domain) => (
+            <div key={domain.label}>
+              <div className="flex items-center justify-between gap-3 text-sm mb-1.5">
+                <span className="font-medium text-slate-700">{domain.label}</span>
+                <span className={domain.percentage >= 70 ? "font-semibold text-green-700" : domain.percentage >= 50 ? "font-semibold text-amber-700" : "font-semibold text-red-700"}>
+                  {domain.percentage}% · {domain.earned}/{domain.max}
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                <div
+                  className={domain.percentage >= 70 ? "h-full bg-green-500" : domain.percentage >= 50 ? "h-full bg-amber-500" : "h-full bg-red-500"}
+                  style={{ width: `${domain.percentage}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+        <h4 className="font-semibold text-indigo-900">Improvement targets</h4>
+        {improvementTargets.length > 0 ? (
+          <ul className="mt-2 space-y-2">
+            {improvementTargets.map((domain) => (
+              <li key={domain.label} className="text-sm text-indigo-800 flex items-start gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-indigo-500 shrink-0" />
+                <span><strong>{domain.label}:</strong> revisit the {domain.questions} assessed question{domain.questions === 1 ? "" : "s"} and use the worked explanations before your next mock.</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-indigo-800 mt-2">All assessed domains are at or above 70%. Build confidence by attempting a more challenging practice set next.</p>
+        )}
+      </div>
+
+      {wrong.length > 0 ? (
+        <div className="space-y-3">
+          <div>
+            <h4 className="font-semibold text-slate-900">Priority review</h4>
+            <p className="text-sm text-slate-500 mt-1">Open each question to see your answer, the correct answer, and the explanation.</p>
+          </div>
+          {wrong.map((answer) => (
+            <WrongAnswerReview key={answer.id} ans={answer} idx={answers.findIndex((item) => item.id === answer.id)} />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-green-200 bg-green-50 p-5 flex gap-3">
+          <CheckCircle className="w-5 h-5 text-green-600 shrink-0" />
+          <div>
+            <h4 className="font-semibold text-green-800">Excellent work</h4>
+            <p className="text-sm text-green-700 mt-1">Every {subject.toLowerCase()} question received full credit.</p>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-slate-200 overflow-hidden">
+        <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+          <h4 className="font-semibold text-slate-800 text-sm">All automatically marked questions</h4>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {answers.map((answer, index) => {
+            const correct = isFullyCorrect(answer);
+            return (
+              <div key={answer.id} className="px-4 py-3 flex items-start gap-3">
+                {correct ? <CheckCircle className="w-5 h-5 text-green-600 shrink-0 mt-0.5" /> : <XCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />}
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-slate-800">Q{index + 1}: {answer.questionText ?? "Question unavailable"}</div>
+                  <div className="text-xs text-slate-500 mt-1">{answer.pointsEarned ?? 0}/{answer.maxPoints ?? 1} points · {correct ? "Correct" : "Review explanation above"}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function WrongAnswerReview({ ans, idx }: { ans: Answer; idx: number }) {
@@ -235,6 +393,7 @@ function ResultDetail({ attemptId }: { attemptId: number }) {
   const { data, isLoading } = trpc.student.getMyResult.useQuery({ attemptId });
   const [expandedQ, setExpandedQ] = useState<number | null>(null);
   const [reviewTab, setReviewTab] = useState<"all" | "wrong">("all");
+  const [subjectTab, setSubjectTab] = useState<"math" | "science">("math");
 
   if (isLoading) {
     return (
@@ -261,8 +420,8 @@ function ResultDetail({ attemptId }: { attemptId: number }) {
 
   const rd = (data.report as { reportData: ReportData } | null)?.reportData;
   const answers = (data.answers ?? []) as unknown as Answer[];
-  const mathAnswers = answers.filter((a) => a.session === "math_session");
-  const scienceAnswers = answers.filter((a) => a.session === "science_session");
+  const mathAnswers = answers.filter((a) => a.subject === "Math" || a.session === "math_session");
+  const scienceAnswers = answers.filter((a) => a.subject === "Science" || a.session === "science_session");
 
   const isWrong = (ans: Answer) => {
     if (ans.isCorrect === false) return true;
@@ -400,8 +559,26 @@ function ResultDetail({ attemptId }: { attemptId: number }) {
         </div>
       )}
 
-      {/* ── Answer Review Section ── */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="flex border-b border-slate-200">
+          <button
+            onClick={() => setSubjectTab("math")}
+            className={`flex-1 px-4 py-4 text-sm font-semibold transition-colors ${subjectTab === "math" ? "bg-blue-50 text-blue-700 border-b-2 border-blue-600" : "text-slate-500 hover:bg-slate-50"}`}
+          >
+            Mathematics Analysis ({mathAnswers.length})
+          </button>
+          <button
+            onClick={() => setSubjectTab("science")}
+            className={`flex-1 px-4 py-4 text-sm font-semibold transition-colors ${subjectTab === "science" ? "bg-teal-50 text-teal-700 border-b-2 border-teal-600" : "text-slate-500 hover:bg-slate-50"}`}
+          >
+            Science Analysis ({scienceAnswers.length})
+          </button>
+        </div>
+        {subjectTab === "math" ? <SubjectAnalysisPanel subject="Mathematics" answers={mathAnswers} /> : <SubjectAnalysisPanel subject="Science" answers={scienceAnswers} />}
+      </div>
+
+      {/* ── Answer Review Section ── */}
+      <div className="hidden bg-white rounded-xl border border-gray-200 overflow-hidden">
         {/* Tab bar */}
         <div className="flex border-b border-gray-100">
           <button

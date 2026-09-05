@@ -590,7 +590,7 @@ export const appRouter = router({
           difficulty: z.enum(["Easy", "Medium", "Hard"]),
           questionType: z.enum([
             "multiple_choice", "short_answer", "drag_drop", "matching", "ordering",
-            "hotspot", "drawing_canvas", "pattern_interaction", "psi_lab", "partial_credit_short_answer"
+            "hotspot", "pattern_interaction", "psi_lab", "partial_credit_short_answer"
           ]),
           maxPoints: z.number().min(1).max(2).optional(),
           questionText: z.string().min(1),
@@ -599,6 +599,15 @@ export const appRouter = router({
           imageUrl: z.string().optional(),
           explanation: z.string().optional(),
           interactiveData: z.unknown().optional(),
+        }).superRefine((value, ctx) => {
+          const interactiveTypes = ["drag_drop", "matching", "ordering", "pattern_interaction", "psi_lab"];
+          if (interactiveTypes.includes(value.questionType) && !value.interactiveData) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ["interactiveData"],
+              message: "Interactive questions require complete response data so they can be automatically scored.",
+            });
+          }
         })
       )
       .mutation(async ({ input }) => {
@@ -619,7 +628,7 @@ export const appRouter = router({
           difficulty: z.enum(["Easy", "Medium", "Hard"]).optional(),
           questionType: z.enum([
             "multiple_choice", "short_answer", "drag_drop", "matching", "ordering",
-            "hotspot", "drawing_canvas", "pattern_interaction", "psi_lab", "partial_credit_short_answer"
+            "hotspot", "pattern_interaction", "psi_lab", "partial_credit_short_answer"
           ]).optional(),
           maxPoints: z.number().min(1).max(2).optional(),
           questionText: z.string().optional(),

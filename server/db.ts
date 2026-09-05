@@ -576,6 +576,9 @@ export async function getAnswersForAttempt(attemptId: number) {
       explanation: questions.explanation,
       imageUrl: questions.imageUrl,
       maxPoints: questions.maxPoints,
+      subject: questions.subject,
+      contentDomain: questions.contentDomain,
+      scienceSubDomain: questions.scienceSubDomain,
     })
     .from(studentAnswers)
     .leftJoin(questions, eq(studentAnswers.questionId, questions.id))
