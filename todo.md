@@ -246,5 +246,14 @@
 - [x] Normalize incomplete legacy scores in the teacher Reports table and Excel export
 - [x] Verify teacher report listing preserves every class report and publication status
 - [x] Re-run TypeScript and the full automated suite after the compatibility fix (56 tests passing)
-- [ ] Save the validated release checkpoint and push it to the connected GitHub repository
+- [x] Save the validated release checkpoint and push it to the connected GitHub repository (main at 558077b)
 - [ ] Change live hosting visibility to Public, publish, and verify the live Grade 4/8 login page
+
+## Phase 25: Grade 4 and Grade 8 Student Roster Import
+- [x] Inspect and validate the supplied Grade 4/Grade 8 workbook structure
+- [x] Add secure school user-ID storage so the imported institutional identifiers are retained
+- [x] Create the roster's Grade 4 and Grade 8 classes and apply the supplied teacher assignments
+- [x] Create student platform accounts, enroll each student in the supplied class, and preserve existing records
+- [x] Verify imported class totals, grade totals, credentials, and duplicate handling
+- [x] Optimize and verify the Admin Classes list for the expanded 12-class roster
+- [ ] Save and push the verified roster-import checkpoint

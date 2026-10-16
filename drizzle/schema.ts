@@ -17,6 +17,7 @@ export const platformUsers = mysqlTable("platform_users", {
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   name: text("name").notNull(),
   email: varchar("email", { length: 320 }),
+  schoolUserId: varchar("school_user_id", { length: 64 }).unique(),
   role: mysqlEnum("role", ["admin", "teacher", "student"]).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

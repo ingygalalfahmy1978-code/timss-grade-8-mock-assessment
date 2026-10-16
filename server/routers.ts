@@ -559,14 +559,15 @@ export const appRouter = router({
     // Classes
     listClasses: adminProcedure.query(async () => {
       const cls = await getAllClasses();
-      const result = [];
-      for (const c of cls) {
-        const students = await getStudentsInClass(c.id);
-        let teacher = null;
-        if (c.teacherId) teacher = await getPlatformUserById(c.teacherId);
-        result.push({ ...c, studentCount: students.length, teacherName: teacher?.name ?? null });
-      }
-      return result;
+      return Promise.all(
+        cls.map(async (c) => {
+          const [students, teacher] = await Promise.all([
+            getStudentsInClass(c.id),
+            c.teacherId ? getPlatformUserById(c.teacherId) : Promise.resolve(undefined),
+          ]);
+          return { ...c, studentCount: students.length, teacherName: teacher?.name ?? null };
+        })
+      );
     }),
 
     createClass: adminProcedure
