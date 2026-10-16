@@ -12,9 +12,11 @@ export default function Login() {
   const utils = trpc.useUtils();
 
   const loginMutation = trpc.platform.login.useMutation({
-    onSuccess: async (data) => {
-      // Invalidate the me query so ProtectedRoute re-fetches with the new session cookie
-      await utils.platform.me.invalidate();
+    onSuccess: (data) => {
+      // Seed the authenticated user before changing routes. Awaiting a refetch here can
+      // leave the form in its pending state if the concurrent platform.me request stalls.
+      utils.platform.me.setData(undefined, data);
+      void utils.platform.me.invalidate();
       if (data.role === "admin") navigate("/admin");
       else if (data.role === "teacher") navigate("/teacher");
       else navigate("/student");

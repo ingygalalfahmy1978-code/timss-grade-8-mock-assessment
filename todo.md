@@ -230,7 +230,8 @@
 - [x] Removed the public demo-credentials panel (it showed the admin password on the login page)
 - [x] Crest and school name in the admin/teacher sidebar, student dashboard, exam instructions and exam screens
 - [x] Crest, school name and colours in student and class PDF reports
-- [ ] Check the pages visually after deploying
+- [x] Check the login, Teacher and Grade 4 student pages visually on the public deployment
+- [x] Visually verify the remaining core public pages, including Admin and Class management
 
 ## Phase 23: Excel Export and Report Security
 - [x] Teacher → Reports: "Export class results" downloads an Excel file (CSV) with every student's score, Maths/Science, each domain and thinking level, class average and who has not submitted
@@ -247,7 +248,7 @@
 - [x] Verify teacher report listing preserves every class report and publication status
 - [x] Re-run TypeScript and the full automated suite after the compatibility fix (56 tests passing)
 - [x] Save the validated release checkpoint and push it to the connected GitHub repository (main at 558077b)
-- [ ] Change live hosting visibility to Public, publish, and verify the live Grade 4/8 login page
+- [x] Change live hosting visibility to Public, publish, and verify the live Grade 4/8 login page
 
 ## Phase 25: Grade 4 and Grade 8 Student Roster Import
 - [x] Inspect and validate the supplied Grade 4/Grade 8 workbook structure
@@ -275,5 +276,8 @@
 ## Phase 28: Live Teacher Dashboard Roster Counts
 - [x] Return enrolled-student counts with the teacher class list
 - [x] Verify the teacher class API returns Ingy's Grade 8 counts (24 and 25)
-- [ ] Verify the live Teacher dashboard displays the correct Grade 8 class counts after publishing
+- [x] Verify the live Teacher dashboard displays the correct Grade 8 class counts after publishing
+- [x] Fix the student sign-in redirect race after a successful login
+- [x] Re-verify the complete Grade 4 login-to-dashboard flow in preview
+- [ ] Verify the complete Grade 4 login-to-dashboard flow on the public deployment
 - [ ] Run validation, save, and publish the corrected live release
