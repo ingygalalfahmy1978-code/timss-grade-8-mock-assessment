@@ -1,9 +1,8 @@
 import { Router, Request, Response } from "express";
-import { getAttemptById, getClassById, getReportByAttemptId, getReportsByClass } from "./db";
+import { getAttemptById, getClassById, getReportByAttemptId, getReportsByClass, isTeacherAssignedToClass } from "./db";
 import PDFDocument from "pdfkit";
 import { SCHOOL_CAMPUS, SCHOOL_NAME } from "@shared/brand";
 import { SCHOOL_CREST_PNG } from "./brandAssets";
-import { canAccessClass } from "./accessControl";
 import { finiteNumber, getReportMaxScore, normalizeBreakdown, normalizeSubjectScore, type ReportBreakdown } from "./reportData";
 
 type ReportData = {
@@ -423,8 +422,9 @@ type PlatformUser = { id: number; role: "admin" | "teacher" | "student" };
 
 /** Admins see every class; teachers only the classes they teach. */
 async function canSeeClass(user: PlatformUser, classId: number): Promise<boolean> {
-  const cls = await getClassById(classId);
-  return canAccessClass(user, cls?.teacherId ?? null);
+  if (user.role === "admin") return true;
+  if (user.role !== "teacher") return false;
+  return isTeacherAssignedToClass(user.id, classId);
 }
 
 /** Staff of the class, or the student themself once results are published. */

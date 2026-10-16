@@ -31,6 +31,7 @@ import {
   getAttemptsByStudent,
   getClassById,
   getClassExamAssignments,
+  getClassesForTeacher,
   getClassesForStudent,
   getExamById,
   getExamWithQuestions,
@@ -42,6 +43,8 @@ import {
   getReportsByClass,
   getReportsByStudent,
   getStudentsInClass,
+  getSubjectTeachersForClasses,
+  isTeacherAssignedToClass,
   removeStudentFromClass,
   saveQuestionnaireResponse,
   saveStudentAnswer,
@@ -70,13 +73,22 @@ import { systemRouter } from "./_core/systemRouter";
 import { matchesNumericAnswer } from "./numericAnswer";
 import { QUESTION_PACKS } from "./questionPacks";
 import { questions as questionsTable } from "../drizzle/schema";
-import { canAccessClass } from "./accessControl";
 import { finiteNumber, getReportMaxScore, normalizeBreakdownMap, normalizeSubjectScore } from "./reportData";
 import { publicProcedure, router } from "./_core/trpc";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function hashPassword(password: string): string {
   return createHash("sha256").update(password + "timss_salt_2024").digest("hex");
+}
+
+async function assertTeacherClassAccess(
+  user: { id: number; role: "admin" | "teacher" | "student" },
+  classId: number
+) {
+  if (user.role === "admin") return;
+  if (user.role !== "teacher" || !(await isTeacherAssignedToClass(user.id, classId))) {
+    throw new TRPCError({ code: "FORBIDDEN" });
+  }
 }
 
 const JWT_SECRET = new TextEncoder().encode(ENV.cookieSecret || "timss_jwt_secret_2024");
@@ -559,13 +571,22 @@ export const appRouter = router({
     // Classes
     listClasses: adminProcedure.query(async () => {
       const cls = await getAllClasses();
+      const subjectAssignments = await getSubjectTeachersForClasses(cls.map((item) => item.id));
       return Promise.all(
         cls.map(async (c) => {
-          const [students, teacher] = await Promise.all([
+          const scienceAssignment = subjectAssignments.find((assignment) => assignment.classId === c.id && assignment.subject === "Science");
+          const [students, mathTeacher, scienceTeacher] = await Promise.all([
             getStudentsInClass(c.id),
             c.teacherId ? getPlatformUserById(c.teacherId) : Promise.resolve(undefined),
+            scienceAssignment ? getPlatformUserById(scienceAssignment.teacherId) : Promise.resolve(undefined),
           ]);
-          return { ...c, studentCount: students.length, teacherName: teacher?.name ?? null };
+          return {
+            ...c,
+            studentCount: students.length,
+            teacherName: mathTeacher?.name ?? null,
+            mathTeacherName: mathTeacher?.name ?? null,
+            scienceTeacherName: scienceTeacher?.name ?? null,
+          };
         })
       );
     }),
@@ -969,8 +990,7 @@ export const appRouter = router({
   teacher: router({
     myClasses: teacherOrAdminProcedure.query(async ({ ctx }) => {
       if (ctx.platformUser.role === "admin") return getAllClasses();
-      const all = await getAllClasses();
-      return all.filter((c) => c.teacherId === ctx.platformUser.id);
+      return getClassesForTeacher(ctx.platformUser.id);
     }),
 
     classStudents: teacherOrAdminProcedure
@@ -978,14 +998,14 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         const cls = await getClassById(input.classId);
         if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
-          throw new TRPCError({ code: "FORBIDDEN" });
+        await assertTeacherClassAccess(ctx.platformUser, input.classId);
         return getStudentsInClass(input.classId);
       }),
 
     classExams: teacherOrAdminProcedure
       .input(z.object({ classId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        await assertTeacherClassAccess(ctx.platformUser, input.classId);
         const assignments = await getClassExamAssignments(input.classId);
         const result = [];
         for (const a of assignments) {
@@ -1000,8 +1020,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const cls = await getClassById(input.classId);
         if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
-          throw new TRPCError({ code: "FORBIDDEN" });
+        await assertTeacherClassAccess(ctx.platformUser, input.classId);
         await assertExamMatchesClassGrade(input.classId, input.examId);
         await assignExamToClass(input.classId, input.examId, ctx.platformUser.id);
         return { success: true };
@@ -1012,8 +1031,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const cls = await getClassById(input.classId);
         if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
-          throw new TRPCError({ code: "FORBIDDEN" });
+        await assertTeacherClassAccess(ctx.platformUser, input.classId);
         await deactivateExamForClass(input.classId, input.examId);
         return { success: true };
       }),
@@ -1025,8 +1043,7 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         const cls = await getClassById(input.classId);
         if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
-          throw new TRPCError({ code: "FORBIDDEN" });
+        await assertTeacherClassAccess(ctx.platformUser, input.classId);
         const attempts = await getAttemptsByExamAndClass(input.examId, input.classId);
         const result = [];
         for (const a of attempts) {
@@ -1052,8 +1069,7 @@ export const appRouter = router({
         if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
         const cls = await getClassById(attempt.classId);
         if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
-        if (!canAccessClass(ctx.platformUser, cls.teacherId))
-          throw new TRPCError({ code: "FORBIDDEN" });
+        await assertTeacherClassAccess(ctx.platformUser, attempt.classId);
         return getReportByAttemptId(input.attemptId);
       }),
 
@@ -1062,8 +1078,7 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         const cls = await getClassById(input.classId);
         if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
-          throw new TRPCError({ code: "FORBIDDEN" });
+        await assertTeacherClassAccess(ctx.platformUser, input.classId);
         const [reports, attempts] = await Promise.all([
           getReportsByClass(input.classId),
           getAttemptsByClass(input.classId),
@@ -1081,8 +1096,7 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         const cls = await getClassById(input.classId);
         if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
-          throw new TRPCError({ code: "FORBIDDEN" });
+        await assertTeacherClassAccess(ctx.platformUser, input.classId);
         const teacher = cls.teacherId ? await getPlatformUserById(cls.teacherId) : null;
 
         const reports = (await getReportsByClass(input.classId)).filter((r) => !input.examId || r.examId === input.examId);
@@ -1161,8 +1175,7 @@ export const appRouter = router({
         if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
         const cls = await getClassById(attempt.classId);
         if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
-          throw new TRPCError({ code: "FORBIDDEN" });
+        await assertTeacherClassAccess(ctx.platformUser, attempt.classId);
         return getStudentAttemptDetail(input.attemptId);
       }),
 
@@ -1178,8 +1191,7 @@ export const appRouter = router({
         if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
         const cls = await getClassById(attempt.classId);
         if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
-          throw new TRPCError({ code: "FORBIDDEN" });
+        await assertTeacherClassAccess(ctx.platformUser, attempt.classId);
         await overrideAnswerScore(input.answerId, input.pointsEarned, input.isCorrect);
         const newTotals = await recalculateAttemptScore(input.attemptId);
 
@@ -1261,8 +1273,7 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         const cls = await getClassById(input.classId);
         if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
-          throw new TRPCError({ code: "FORBIDDEN" });
+        await assertTeacherClassAccess(ctx.platformUser, input.classId);
         return getDrawingAnswersForReview(input.classId, input.examId);
       }),
 
@@ -1278,8 +1289,7 @@ export const appRouter = router({
         if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
         const cls = await getClassById(attempt.classId);
         if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
-        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
-          throw new TRPCError({ code: "FORBIDDEN" });
+        await assertTeacherClassAccess(ctx.platformUser, attempt.classId);
         // Update the answer score
         await updateDrawingAnswerScore(input.answerId, input.pointsEarned);
         // Recalculate the attempt totals

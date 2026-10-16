@@ -6,6 +6,7 @@ import {
   mysqlTable,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/mysql-core";
 
@@ -51,6 +52,24 @@ export const studentClasses = mysqlTable("student_classes", {
 });
 
 export type StudentClass = typeof studentClasses.$inferSelect;
+
+// ─── Subject-Specific Class Teachers ──────────────────────────────────────────
+// The legacy classes.teacherId remains the Mathematics/lead teacher. This table
+// supports a separate Science teacher for the same class without removing access
+// for the existing teacher.
+export const classSubjectTeachers = mysqlTable(
+  "class_subject_teachers",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    classId: int("class_id").notNull(),
+    teacherId: int("teacher_id").notNull(),
+    subject: mysqlEnum("subject", ["Math", "Science"]).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("class_subject_teachers_class_subject_unique").on(table.classId, table.subject)]
+);
+
+export type ClassSubjectTeacher = typeof classSubjectTeachers.$inferSelect;
 
 // ─── Question Bank ────────────────────────────────────────────────────────────
 

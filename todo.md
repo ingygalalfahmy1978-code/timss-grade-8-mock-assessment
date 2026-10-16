@@ -256,4 +256,11 @@
 - [x] Create student platform accounts, enroll each student in the supplied class, and preserve existing records
 - [x] Verify imported class totals, grade totals, credentials, and duplicate handling
 - [x] Optimize and verify the Admin Classes list for the expanded 12-class roster
-- [ ] Save and push the verified roster-import checkpoint
+- [x] Save and push the verified roster-import checkpoint (main at e1bf307)
+
+## Phase 26: Subject-Specific Teacher Assignment
+- [x] Add support for separate Mathematics and Science teachers per class without replacing the existing class teacher
+- [x] Create Rasha Albay as the Grade 8 Science teacher and assign all Grade 8 imported classes
+- [x] Create Rowiena Akram as the Grade 4 Science teacher and assign all Grade 4 imported classes
+- [x] Verify subject-teacher class access and the Admin Classes display
+- [ ] Save and push the verified subject-teacher assignment checkpoint

@@ -124,9 +124,10 @@ export default function AdminClasses() {
                       </button>
                     </div>
                   </div>
-                  {c.teacherName && (
-                    <div className="text-xs text-blue-600 mt-1.5">Teacher: {c.teacherName}</div>
-                  )}
+                  <div className="mt-1.5 space-y-0.5 text-xs">
+                    {c.mathTeacherName && <div className="text-blue-600">Maths: {c.mathTeacherName}</div>}
+                    {c.scienceTeacherName && <div className="text-emerald-600">Science: {c.scienceTeacherName}</div>}
+                  </div>
                 </div>
               ))
             )}

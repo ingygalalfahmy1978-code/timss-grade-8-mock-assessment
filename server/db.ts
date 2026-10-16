@@ -4,6 +4,7 @@ import {
   InsertUser,
   backgroundQuestionnaireResponses,
   classExamAssignments,
+  classSubjectTeachers,
   classes,
   examBlocks,
   examQuestions,
@@ -211,6 +212,48 @@ export async function removeStudentFromClass(studentId: number, classId: number)
   await db
     .delete(studentClasses)
     .where(and(eq(studentClasses.studentId, studentId), eq(studentClasses.classId, classId)));
+}
+
+// ─── Subject-Specific Class Teachers ──────────────────────────────────────────
+export async function getSubjectTeachersForClasses(classIds: number[]) {
+  const db = await getDb();
+  if (!db || classIds.length === 0) return [];
+  return db.select().from(classSubjectTeachers).where(inArray(classSubjectTeachers.classId, classIds));
+}
+
+export async function assignSubjectTeacherToClass(classId: number, teacherId: number, subject: "Math" | "Science") {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db
+    .insert(classSubjectTeachers)
+    .values({ classId, teacherId, subject })
+    .onDuplicateKeyUpdate({ set: { teacherId } });
+}
+
+export async function getClassesForTeacher(teacherId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const [leadClasses, subjectAssignments] = await Promise.all([
+    db.select().from(classes).where(eq(classes.teacherId, teacherId)),
+    db.select().from(classSubjectTeachers).where(eq(classSubjectTeachers.teacherId, teacherId)),
+  ]);
+  const classIds = Array.from(new Set([...leadClasses.map((item) => item.id), ...subjectAssignments.map((item) => item.classId)]));
+  if (classIds.length === 0) return [];
+  return db.select().from(classes).where(inArray(classes.id, classIds));
+}
+
+export async function isTeacherAssignedToClass(teacherId: number, classId: number) {
+  const db = await getDb();
+  if (!db) return false;
+  const [classRows, subjectAssignments] = await Promise.all([
+    db.select({ teacherId: classes.teacherId }).from(classes).where(eq(classes.id, classId)).limit(1),
+    db
+      .select({ id: classSubjectTeachers.id })
+      .from(classSubjectTeachers)
+      .where(and(eq(classSubjectTeachers.classId, classId), eq(classSubjectTeachers.teacherId, teacherId)))
+      .limit(1),
+  ]);
+  return classRows[0]?.teacherId === teacherId || subjectAssignments.length > 0;
 }
 
 // ─── Questions ────────────────────────────────────────────────────────────────
