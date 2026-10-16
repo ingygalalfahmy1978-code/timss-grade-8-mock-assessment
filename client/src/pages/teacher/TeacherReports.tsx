@@ -107,7 +107,7 @@ export default function TeacherReports() {
             {selectedClassId && (
               <button
                 onClick={handleDownloadClassReport}
-                className="flex items-center gap-2 px-3 py-1.5 bg-[oklch(0.42_0.14_240)] text-white rounded-lg text-sm font-medium"
+                className="flex items-center gap-2 px-3 py-1.5 bg-brand-navy text-white rounded-lg text-sm font-medium"
               >
                 <Download className="w-4 h-4" />
                 Download Class Report
@@ -126,7 +126,7 @@ export default function TeacherReports() {
                 onClick={() => setSelectedClassId(c.id)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   selectedClassId === c.id
-                    ? "bg-[oklch(0.42_0.14_240)] text-white"
+                    ? "bg-brand-navy text-white"
                     : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >

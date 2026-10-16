@@ -296,7 +296,15 @@ export async function getExamBlocks(examId: number) {
   return db.select().from(examBlocks).where(eq(examBlocks.examId, examId)).orderBy(examBlocks.blockNumber);
 }
 
-export async function createExam(data: { name: string; description?: string; durationMinutes?: number }) {
+export async function createExam(data: {
+  name: string;
+  description?: string;
+  durationMinutes?: number;
+  grade?: number;
+  session1Minutes?: number;
+  breakMinutes?: number;
+  session2Minutes?: number;
+}) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.insert(exams).values(data);

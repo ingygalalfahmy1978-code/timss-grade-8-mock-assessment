@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { BrandStripe, SchoolCrest } from "@/components/SchoolBrand";
 import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import { BookOpen, Clock, LogOut, AlertCircle, BarChart2, TrendingUp } from "lucide-react";
 import { Link } from "wouter";
@@ -17,18 +18,19 @@ export default function StudentDashboard() {
     refetchOnWindowFocus: false,
   });
 
+  const grades = Array.from(new Set((availableExams ?? []).map((e) => e.exam.grade)));
+  const headerGrade = grades.length === 1 ? `Grade ${grades[0]}` : "TIMSS";
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-[oklch(0.20_0.06_240)] text-white px-6 py-4">
+      <header className="bg-brand-navy-deep text-white px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center">
-              <BookOpen className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="font-bold text-sm">Grade 8 Assessment Platform</div>
-              <div className="text-white/50 text-xs">Mathematics &amp; Science</div>
+            <SchoolCrest />
+            <div className="min-w-0">
+              <div className="font-brand text-sm uppercase tracking-wide leading-tight">American School of Creative Science</div>
+              <div className="text-white/60 text-xs">{headerGrade} TIMSS Mock Assessment · Mathematics &amp; Science</div>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -60,6 +62,7 @@ export default function StudentDashboard() {
           </div>
         </div>
       </header>
+      <BrandStripe />
 
       {/* Main content */}
       <main className="max-w-4xl mx-auto px-6 py-8">
@@ -122,7 +125,7 @@ export default function StudentDashboard() {
                             {item.exam.durationMinutes} minutes
                           </span>
                           <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-                            Grade 8 · Math &amp; Science
+                            Grade {item.exam.grade} · Math &amp; Science
                           </span>
                         </div>
                       </div>

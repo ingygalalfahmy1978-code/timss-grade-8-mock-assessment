@@ -91,7 +91,7 @@ export default function AdminStudents() {
           </div>
           <button
             onClick={() => { setShowAdd(true); setGeneratedCreds(null); setForm({ name: "", username: "", password: "", email: "", classId: "" }); }}
-            className="flex items-center gap-2 bg-[oklch(0.42_0.14_240)] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[oklch(0.38_0.14_240)] transition-colors"
+            className="flex items-center gap-2 bg-brand-navy text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-navy-dark transition-colors"
           >
             <UserPlus className="w-4 h-4" />
             Add Student
@@ -199,7 +199,7 @@ export default function AdminStudents() {
                       await handleAdd();
                     }
                   }}
-                  className="px-4 py-2 text-sm bg-[oklch(0.42_0.14_240)] text-white rounded-lg font-medium hover:bg-[oklch(0.38_0.14_240)]"
+                  className="px-4 py-2 text-sm bg-brand-navy text-white rounded-lg font-medium hover:bg-brand-navy-dark"
                 >
                   {editUser ? "Save Changes" : "Create Student"}
                 </button>

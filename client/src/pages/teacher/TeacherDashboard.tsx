@@ -15,7 +15,7 @@ export default function TeacherDashboard() {
     <PlatformLayout title="Teacher Dashboard">
       <div className="space-y-8">
         {/* Welcome */}
-        <div className="bg-gradient-to-r from-[oklch(0.42_0.14_240)] to-[oklch(0.35_0.12_240)] rounded-xl p-6 text-white">
+        <div className="bg-gradient-to-r from-brand-navy to-brand-navy-dark rounded-xl p-6 text-white">
           <h2 className="text-xl font-bold">Welcome, {user?.name}</h2>
           <p className="text-white/80 mt-1 text-sm">
             Manage your classes, activate exams, and track student progress.

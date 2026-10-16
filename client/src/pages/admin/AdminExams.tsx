@@ -5,6 +5,7 @@ import { BookOpen, ChevronRight, Edit2, Plus, Users, CheckCircle, AlertCircle, X
 import { useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
+import { GRADES, defaultDuration, parseGrade, type Grade } from "@shared/grades";
 
 export default function AdminExams() {
   const { user } = usePlatformAuth();
@@ -28,7 +29,8 @@ export default function AdminExams() {
   });
 
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: "", description: "", durationMinutes: 90 });
+  const [form, setForm] = useState<{ name: string; description: string; durationMinutes: number; grade: Grade }>({ name: "", description: "", durationMinutes: 90, grade: 8 });
+  const [filterGrade, setFilterGrade] = useState<string>("All");
   const [assignExamId, setAssignExamId] = useState<number | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const deleteExam = trpc.admin.deleteExam.useMutation({
@@ -52,7 +54,7 @@ export default function AdminExams() {
     await createExam.mutateAsync(form);
     toast.success("Exam created — add questions then publish and assign it to classes.");
     setShowAdd(false);
-    setForm({ name: "", description: "", durationMinutes: 90 });
+    setForm({ name: "", description: "", durationMinutes: 90, grade: 8 });
   };
 
   const togglePublish = async (id: number, current: boolean) => {
@@ -65,12 +67,16 @@ export default function AdminExams() {
   };
 
   const handleToggleClass = async (classId: number, examId: number, isCurrentlyActive: boolean) => {
-    if (isCurrentlyActive) {
-      await deactivateExam.mutateAsync({ classId, examId });
-      toast.success("Exam removed from class — students in this class can no longer see it.");
-    } else {
-      await assignExam.mutateAsync({ classId, examId });
-      toast.success("Exam assigned to class — students can now see and take this exam!");
+    try {
+      if (isCurrentlyActive) {
+        await deactivateExam.mutateAsync({ classId, examId });
+        toast.success("Exam removed from class — students in this class can no longer see it.");
+      } else {
+        await assignExam.mutateAsync({ classId, examId });
+        toast.success("Exam assigned to class — students can now see and take this exam!");
+      }
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "Could not update the class assignment");
     }
   };
 
@@ -86,7 +92,7 @@ export default function AdminExams() {
           </div>
           <button
             onClick={() => setShowAdd(true)}
-            className="flex items-center gap-2 bg-[oklch(0.42_0.14_240)] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[oklch(0.38_0.14_240)]"
+            className="flex items-center gap-2 bg-brand-navy text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-navy-dark"
           >
             <Plus className="w-4 h-4" />
             New Exam
@@ -142,8 +148,24 @@ export default function AdminExams() {
               </div>
               <div className="px-6 py-5 space-y-4">
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Grade *</label>
+                  <div className="flex gap-2">
+                    {GRADES.map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setForm({ ...form, grade: g, durationMinutes: defaultDuration(g) })}
+                        className={`flex-1 px-3 py-2 rounded-lg border-2 text-sm font-semibold ${form.grade === g ? "border-brand-navy bg-blue-50 text-brand-navy" : "border-gray-200 text-gray-600"}`}
+                      >
+                        Grade {g}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">{form.grade === 4 ? "Grade 4 uses two 36-minute sessions." : "Grade 8 uses two 45-minute sessions."} Only Grade {form.grade} questions and classes can be used with this exam.</p>
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Exam Name *</label>
-                  <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Mock Exam 7" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
+                  <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={form.grade === 4 ? "e.g. Grade 4 Mock Exam 1" : "e.g. Mock Exam 7"} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
@@ -156,7 +178,7 @@ export default function AdminExams() {
               </div>
               <div className="px-6 py-4 border-t border-gray-100 flex gap-3 justify-end">
                 <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg">Cancel</button>
-                <button onClick={handleCreate} className="px-4 py-2 text-sm bg-[oklch(0.42_0.14_240)] text-white rounded-lg font-medium">Create Exam</button>
+                <button onClick={handleCreate} className="px-4 py-2 text-sm bg-brand-navy text-white rounded-lg font-medium">Create Exam</button>
               </div>
             </div>
           </div>
@@ -180,6 +202,8 @@ export default function AdminExams() {
                   classes.map((cls) => {
                     const assignment = examAssignments?.find((a) => a.classId === cls.id);
                     const isActive = assignment?.isActive ?? false;
+                    const clsGrade = parseGrade(cls.grade);
+                    const wrongGrade = clsGrade !== null && clsGrade !== selectedExam.grade;
                     return (
                       <div key={cls.id} className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${isActive ? "border-green-300 bg-green-50" : "border-gray-200 bg-white"}`}>
                         <div className="flex items-center gap-3">
@@ -189,15 +213,16 @@ export default function AdminExams() {
                             <div className="w-5 h-5 rounded-full border-2 border-gray-300 flex-shrink-0" />
                           )}
                           <div>
-                            <p className="text-sm font-medium text-gray-900">{cls.name}</p>
+                            <p className="text-sm font-medium text-gray-900">{cls.name} <span className="text-xs font-normal text-gray-500">· {cls.grade}</span></p>
                             {isActive && <p className="text-xs text-green-600">Students can see this exam</p>}
-                            {!isActive && <p className="text-xs text-gray-400">Not assigned</p>}
+                            {!isActive && !wrongGrade && <p className="text-xs text-gray-400">Not assigned</p>}
+                            {!isActive && wrongGrade && <p className="text-xs text-gray-400">Different grade — this is a Grade {selectedExam.grade} exam</p>}
                           </div>
                         </div>
                         <button
                           onClick={() => handleToggleClass(cls.id, assignExamId, isActive)}
-                          disabled={assignExam.isPending || deactivateExam.isPending}
-                          className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+                          disabled={assignExam.isPending || deactivateExam.isPending || (!isActive && wrongGrade)}
+                          className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                             isActive
                               ? "bg-red-100 text-red-700 hover:bg-red-200"
                               : "bg-green-100 text-green-700 hover:bg-green-200"
@@ -211,30 +236,48 @@ export default function AdminExams() {
                 )}
               </div>
               <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
-                <button onClick={() => setAssignExamId(null)} className="px-4 py-2 text-sm bg-[oklch(0.42_0.14_240)] text-white rounded-lg font-medium">Done</button>
+                <button onClick={() => setAssignExamId(null)} className="px-4 py-2 text-sm bg-brand-navy text-white rounded-lg font-medium">Done</button>
               </div>
             </div>
           </div>
         )}
+
+        {/* Grade filter */}
+        <div className="flex gap-2">
+          {["All", ...GRADES.map(String)].map((g) => (
+            <button
+              key={g}
+              onClick={() => setFilterGrade(g)}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium border ${filterGrade === g ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200"}`}
+            >
+              {g === "All" ? "All grades" : `Grade ${g}`}
+            </button>
+          ))}
+        </div>
 
         {/* Exam Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {isLoading ? (
             <div className="col-span-3 text-center py-8 text-gray-400">Loading...</div>
           ) : (
-            exams?.map((exam) => {
+            exams?.filter((exam) => filterGrade === "All" || exam.grade === Number(filterGrade)).map((exam) => {
               return (
                 <div key={exam.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
                   <div className="p-5">
                     <div className="flex items-start justify-between mb-3">
-                      <div className="w-10 h-10 rounded-lg bg-[oklch(0.42_0.14_240)]/10 flex items-center justify-center">
-                        <BookOpen className="w-5 h-5 text-[oklch(0.42_0.14_240)]" />
+                      <div className="w-10 h-10 rounded-lg bg-brand-navy/10 flex items-center justify-center">
+                        <BookOpen className="w-5 h-5 text-brand-navy" />
                       </div>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                        exam.isPublished ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-                      }`}>
-                        {exam.isPublished ? "Published" : "Draft"}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${exam.grade === 4 ? "bg-brand-red/10 text-brand-red-dark" : "bg-brand-navy/10 text-brand-navy"}`}>
+                          Grade {exam.grade}
+                        </span>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          exam.isPublished ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                        }`}>
+                          {exam.isPublished ? "Published" : "Draft"}
+                        </span>
+                      </div>
                     </div>
                     <h3 className="font-semibold text-gray-900">{exam.name}</h3>
                     {exam.description && (

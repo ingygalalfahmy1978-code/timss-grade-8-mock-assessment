@@ -345,9 +345,9 @@ export default function StudentQuestionnaire() {
   const isTimeLow = timeLeft < 300;
 
   return (
-    <div className="min-h-screen bg-[oklch(0.97_0.01_240)] flex flex-col">
+    <div className="min-h-screen bg-brand-soft flex flex-col">
       {/* Header */}
-      <header className="bg-[oklch(0.20_0.06_240)] text-white sticky top-0 z-40 shadow-lg">
+      <header className="bg-brand-navy-deep text-white sticky top-0 z-40 shadow-lg">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-purple-500 flex items-center justify-center">

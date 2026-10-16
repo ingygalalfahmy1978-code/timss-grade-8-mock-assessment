@@ -1,12 +1,12 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
 import { usePlatformAuth } from "@/hooks/usePlatformAuth";
-import { Edit2, Plus, Trash2 } from "lucide-react";
+import { CONTENT_DOMAINS, GRADES, type Grade, type ScienceSubDomain } from "@shared/grades";
+import { Edit2, PackagePlus, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-const MATH_DOMAINS = ["Number", "Algebra", "Geometry", "Data and Probability"];
-const SCIENCE_DOMAINS = ["Biology", "Chemistry", "Physics", "Earth Science"];
+const ALL_DOMAINS = Array.from(new Set(GRADES.flatMap((g) => [...CONTENT_DOMAINS[g].Math, ...CONTENT_DOMAINS[g].Science])));
 const COGNITIVE_DOMAINS = ["Knowing", "Applying", "Reasoning"] as const;
 const DIFFICULTIES = ["Easy", "Medium", "Hard"] as const;
 const QUESTION_TYPES = [
@@ -15,16 +15,11 @@ const QUESTION_TYPES = [
   { value: "partial_credit_short_answer", label: "Partial Credit Short Answer (0-2 pts)" },
 ] as const;
 
-const SCIENCE_SUBDOMAINS: Record<string, string[]> = {
-  Biology: ["Life Processes", "Ecosystems", "Genetics", "Evolution"],
-  Chemistry: ["Matter", "Chemical Reactions", "Acids & Bases", "Periodic Table"],
-  Physics: ["Forces & Motion", "Energy", "Electricity & Magnetism", "Waves & Light"],
-  "Earth Science": ["Earth Structure", "Atmosphere", "Oceans", "Space"],
-};
 
 type QuestionTypeValue = typeof QUESTION_TYPES[number]["value"];
 
 interface QuestionForm {
+  grade: Grade;
   subject: "Math" | "Science";
   contentDomain: string;
   scienceSubDomain: string;
@@ -41,6 +36,7 @@ interface QuestionForm {
 }
 
 const defaultForm: QuestionForm = {
+  grade: 8,
   subject: "Math",
   contentDomain: "Number",
   scienceSubDomain: "",
@@ -69,16 +65,37 @@ export default function AdminQuestions() {
   const createQ = trpc.admin.createQuestion.useMutation({ onSuccess: () => utils.admin.listQuestions.invalidate() });
   const updateQ = trpc.admin.updateQuestion.useMutation({ onSuccess: () => utils.admin.listQuestions.invalidate() });
   const deleteQ = trpc.admin.deleteQuestion.useMutation({ onSuccess: () => utils.admin.listQuestions.invalidate() });
+  const { data: packs } = trpc.admin.listQuestionPacks.useQuery(undefined, { enabled: isAuth });
+  const importPack = trpc.admin.importQuestionPack.useMutation({
+    onSuccess: () => {
+      utils.admin.listQuestions.invalidate();
+      utils.admin.listQuestionPacks.invalidate();
+    },
+  });
+  const [showPacks, setShowPacks] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<QuestionForm>(defaultForm);
   const [filterSubject, setFilterSubject] = useState<string>("All");
   const [filterDomain, setFilterDomain] = useState<string>("All");
+  const [filterGrade, setFilterGrade] = useState<string>("All");
 
-  const contentDomains = form.subject === "Math" ? MATH_DOMAINS : SCIENCE_DOMAINS;
+  const contentDomains = CONTENT_DOMAINS[form.grade][form.subject];
+  const filterDomains = filterGrade === "All" ? ALL_DOMAINS : [...CONTENT_DOMAINS[Number(filterGrade) as Grade].Math, ...CONTENT_DOMAINS[Number(filterGrade) as Grade].Science];
+  const gradeCount = (g: Grade) => questions?.filter((q) => q.grade === g).length ?? 0;
+
+  const handleImport = async (packId: "grade4" | "grade8") => {
+    try {
+      const r = await importPack.mutateAsync({ packId });
+      toast.success(r.added > 0 ? `Added ${r.added} questions${r.skipped ? ` (${r.skipped} were already in the bank)` : ""}.` : "All questions in this pack are already in the bank.");
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "Could not add the question pack");
+    }
+  };
 
   const filtered = questions?.filter((q) => {
+    if (filterGrade !== "All" && q.grade !== Number(filterGrade)) return false;
     if (filterSubject !== "All" && q.subject !== filterSubject) return false;
     if (filterDomain !== "All" && q.contentDomain !== filterDomain) return false;
     return true;
@@ -88,11 +105,13 @@ export default function AdminQuestions() {
     if (!form.questionText) { toast.error("Question text is required"); return; }
     if (!form.correctAnswer) { toast.error("Correct answer is required"); return; }
     try {
-      const scienceSubDomainValue = form.scienceSubDomain as "Earth Science" | "Biology" | "Chemistry" | "Physics" | undefined || undefined;
+      // The sub-domain column holds the TIMSS science area (e.g. "Biology"), so use the content domain for science.
+      const scienceSubDomainValue = form.subject === "Science" ? (form.contentDomain as ScienceSubDomain) : undefined;
       const examSessionValue = form.examSession || undefined;
       if (editId) {
         await updateQ.mutateAsync({
           id: editId,
+          grade: form.grade,
           subject: form.subject,
           contentDomain: form.contentDomain,
           scienceSubDomain: scienceSubDomainValue ?? null,
@@ -110,6 +129,7 @@ export default function AdminQuestions() {
         toast.success("Question updated");
       } else {
         await createQ.mutateAsync({
+          grade: form.grade,
           subject: form.subject,
           contentDomain: form.contentDomain,
           scienceSubDomain: scienceSubDomainValue,
@@ -138,6 +158,7 @@ export default function AdminQuestions() {
     if (!q) return;
     setEditId(q.id);
     setForm({
+      grade: (q.grade === 4 ? 4 : 8) as Grade,
       subject: q.subject as "Math" | "Science",
       contentDomain: q.contentDomain,
       scienceSubDomain: (q as { scienceSubDomain?: string }).scienceSubDomain ?? "",
@@ -169,19 +190,58 @@ export default function AdminQuestions() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Question Bank</h2>
-            <p className="text-sm text-gray-500 mt-0.5">{questions?.length ?? 0} questions total</p>
+            <p className="text-sm text-gray-500 mt-0.5">{questions?.length ?? 0} questions total · Grade 4: {gradeCount(4)} · Grade 8: {gradeCount(8)}</p>
           </div>
+          <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowPacks(!showPacks)}
+            className="flex items-center gap-2 border border-gray-200 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50"
+          >
+            <PackagePlus className="w-4 h-4" />
+            Add question packs
+          </button>
           <button
             onClick={() => { setShowForm(true); setEditId(null); setForm(defaultForm); }}
-            className="flex items-center gap-2 bg-[oklch(0.42_0.14_240)] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[oklch(0.38_0.14_240)]"
+            className="flex items-center gap-2 bg-brand-navy text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-navy-dark"
           >
             <Plus className="w-4 h-4" />
             Add Question
           </button>
+          </div>
         </div>
+
+        {showPacks && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {packs?.map((p) => {
+              const done = p.alreadyAdded >= p.total;
+              return (
+                <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-5 flex flex-col gap-3">
+                  <div>
+                    <h3 className="font-semibold text-gray-900">{p.label}</h3>
+                    <p className="text-sm text-gray-500 mt-1">{p.description}</p>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {p.total} questions · {done ? "all already in your bank" : p.alreadyAdded > 0 ? `${p.total - p.alreadyAdded} new, ${p.alreadyAdded} already in your bank` : "none added yet"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleImport(p.id as "grade4" | "grade8")}
+                    disabled={done || importPack.isPending}
+                    className="self-start px-4 py-2 text-sm bg-brand-navy text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {importPack.isPending ? "Adding..." : done ? "Added" : `Add ${p.total - p.alreadyAdded} questions`}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex flex-wrap gap-3">
+          <select value={filterGrade} onChange={(e) => { setFilterGrade(e.target.value); setFilterDomain("All"); }} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm">
+            <option value="All">All Grades</option>
+            {GRADES.map((g) => <option key={g} value={g}>Grade {g}</option>)}
+          </select>
           <select value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm">
             <option value="All">All Subjects</option>
             <option value="Math">Math</option>
@@ -189,7 +249,7 @@ export default function AdminQuestions() {
           </select>
           <select value={filterDomain} onChange={(e) => setFilterDomain(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm">
             <option value="All">All Domains</option>
-            {[...MATH_DOMAINS, ...SCIENCE_DOMAINS].map((d) => <option key={d} value={d}>{d}</option>)}
+            {filterDomains.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
         </div>
 
@@ -203,8 +263,14 @@ export default function AdminQuestions() {
               <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Grade *</label>
+                    <select value={form.grade} onChange={(e) => { const g = Number(e.target.value) as Grade; setForm({ ...form, grade: g, contentDomain: CONTENT_DOMAINS[g][form.subject][0], scienceSubDomain: "" }); }} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                      {GRADES.map((g) => <option key={g} value={g}>Grade {g}</option>)}
+                    </select>
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
-                    <select value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value as "Math" | "Science", contentDomain: e.target.value === "Math" ? "Number" : "Biology", scienceSubDomain: "", examSession: e.target.value === "Math" ? "math_session" : "science_session" })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <select value={form.subject} onChange={(e) => { const subj = e.target.value as "Math" | "Science"; setForm({ ...form, subject: subj, contentDomain: CONTENT_DOMAINS[form.grade][subj][0], scienceSubDomain: "", examSession: subj === "Math" ? "math_session" : "science_session" }); }} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
                       <option value="Math">Mathematics</option>
                       <option value="Science">Science</option>
                     </select>
@@ -215,15 +281,6 @@ export default function AdminQuestions() {
                       {contentDomains.map((d) => <option key={d} value={d}>{d}</option>)}
                     </select>
                   </div>
-                  {form.subject === "Science" && SCIENCE_SUBDOMAINS[form.contentDomain] && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Science Sub-Domain</label>
-                      <select value={form.scienceSubDomain} onChange={(e) => setForm({ ...form, scienceSubDomain: e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
-                        <option value="">-- Select Sub-Domain --</option>
-                        {SCIENCE_SUBDOMAINS[form.contentDomain].map((sd) => <option key={sd} value={sd}>{sd}</option>)}
-                      </select>
-                    </div>
-                  )}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Cognitive Domain *</label>
                     <select value={form.cognitiveDomain} onChange={(e) => setForm({ ...form, cognitiveDomain: e.target.value as typeof form.cognitiveDomain })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
@@ -311,7 +368,7 @@ export default function AdminQuestions() {
               </div>
               <div className="px-6 py-4 border-t border-gray-100 flex gap-3 justify-end">
                 <button onClick={() => { setShowForm(false); setEditId(null); }} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg">Cancel</button>
-                <button onClick={handleSubmit} className="px-4 py-2 text-sm bg-[oklch(0.42_0.14_240)] text-white rounded-lg font-medium">
+                <button onClick={handleSubmit} className="px-4 py-2 text-sm bg-brand-navy text-white rounded-lg font-medium">
                   {editId ? "Save Changes" : "Add to Bank"}
                 </button>
               </div>
@@ -326,6 +383,7 @@ export default function AdminQuestions() {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Question</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600">Grade</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Subject</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Domain</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Cognitive</th>
@@ -336,14 +394,19 @@ export default function AdminQuestions() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {isLoading ? (
-                  <tr><td colSpan={7} className="text-center py-8 text-gray-400">Loading...</td></tr>
+                  <tr><td colSpan={8} className="text-center py-8 text-gray-400">Loading...</td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={7} className="text-center py-8 text-gray-400">No questions found.</td></tr>
+                  <tr><td colSpan={8} className="text-center py-8 text-gray-400">No questions found.</td></tr>
                 ) : (
                   filtered.map((q) => (
                     <tr key={q.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 max-w-xs">
                         <div className="text-gray-900 truncate">{q.questionText}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${q.grade === 4 ? "bg-brand-red/10 text-brand-red-dark" : "bg-brand-navy/10 text-brand-navy"}`}>
+                          G{q.grade}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${q.subject === "Math" ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700"}`}>

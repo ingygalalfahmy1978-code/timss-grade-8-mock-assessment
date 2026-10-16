@@ -23,9 +23,9 @@ import {
 } from "recharts";
 
 const PASS_LINE = 60;
-const MATH_COLOR = "#3b82f6";
+const MATH_COLOR = "#2f6eb4"; // school blue
 const SCI_COLOR = "#10b981";
-const TOTAL_COLOR = "#8b5cf6";
+const TOTAL_COLOR = "#2b2a7a"; // school navy
 
 function pctColor(v: number | null) {
   if (v === null) return "text-gray-400";
@@ -173,7 +173,7 @@ export default function TeacherAnalytics() {
             <button
               onClick={handleExportPDF}
               disabled={!classId || activeExamIds.length === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-[oklch(0.42_0.14_240)] hover:bg-[oklch(0.35_0.12_240)] text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-40"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-navy hover:bg-brand-navy-dark text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-40"
             >
               <Download className="w-4 h-4" />
               Export Class PDF

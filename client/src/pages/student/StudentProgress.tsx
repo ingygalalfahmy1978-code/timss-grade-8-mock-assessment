@@ -57,9 +57,9 @@ function TrendBadge({ values }: { values: number[] }) {
 }
 
 const PASS_LINE = 60;
-const MATH_COLOR = "#3b82f6";
+const MATH_COLOR = "#2f6eb4"; // school blue
 const SCI_COLOR = "#10b981";
-const TOTAL_COLOR = "#8b5cf6";
+const TOTAL_COLOR = "#2b2a7a"; // school navy
 
 export default function StudentProgress() {
   const { user, logout } = usePlatformAuth();
@@ -122,7 +122,7 @@ export default function StudentProgress() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-[oklch(0.20_0.06_240)] text-white px-6 py-4">
+      <header className="bg-brand-navy-deep text-white px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link href="/student">

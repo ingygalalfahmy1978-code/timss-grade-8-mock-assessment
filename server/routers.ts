@@ -1,4 +1,5 @@
 import { COOKIE_NAME } from "@shared/const";
+import { GRADE_LABEL, GRADE_TIMING, SCIENCE_SUB_DOMAINS, defaultDuration, parseGrade, type Grade } from "@shared/grades";
 import { and, eq, inArray } from "drizzle-orm";
 import { studentExamAttempts, exams, platformUsers, studentClasses } from "../drizzle/schema";
 import { getDb } from "./db";
@@ -66,6 +67,9 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { ENV } from "./_core/env";
 import { notifyOwner } from "./_core/notification";
 import { systemRouter } from "./_core/systemRouter";
+import { matchesNumericAnswer } from "./numericAnswer";
+import { QUESTION_PACKS } from "./questionPacks";
+import { questions as questionsTable } from "../drizzle/schema";
 import { publicProcedure, router } from "./_core/trpc";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -261,6 +265,9 @@ function scoreAnswer(
   }
 
   // Default: short_answer
+  // Numeric answers are marked by value, so "48 crayons" or "x = 6" still count.
+  const numeric = matchesNumericAnswer(answerGiven, correctAnswer);
+  if (numeric !== null) return { isCorrect: numeric, pointsEarned: numeric ? maxPoints : 0 };
   const given = answerGiven.trim().toLowerCase();
   const expected = correctAnswer.trim().toLowerCase();
   const correct = given === expected || (expected.includes(given) && given.length > 3);
@@ -270,7 +277,7 @@ function scoreAnswer(
 // ─── Report Generation Helper ─────────────────────────────────────────────────
 function generateReportData(
   student: { id: number; name: string; username?: string },
-  exam: { id: number; name: string },
+  exam: { id: number; name: string; grade?: number },
   className: string,
   attempt: {
     totalScore: number | null;
@@ -363,6 +370,7 @@ function generateReportData(
     studentCode: student.username ?? "",
     className,
     examName: exam.name,
+    grade: exam.grade ?? 8,
     totalScore,
     totalMaxPoints,
     totalQuestions,
@@ -393,6 +401,23 @@ function generateReportData(
 }
 
 // ─── App Router ───────────────────────────────────────────────────────────────
+// ─── Grade helpers ────────────────────────────────────────────────────────────
+const gradeSchema = z.union([z.literal(4), z.literal(8)]);
+const scienceSubDomainSchema = z.enum(SCIENCE_SUB_DOMAINS);
+
+/** Stops a Grade 4 exam being given to a Grade 8 class (and the other way round). */
+async function assertExamMatchesClassGrade(classId: number, examId: number) {
+  const [cls, exam] = await Promise.all([getClassById(classId), getExamById(examId)]);
+  if (!cls || !exam) throw new TRPCError({ code: "NOT_FOUND", message: "Class or exam not found" });
+  const classGrade = parseGrade(cls.grade);
+  if (classGrade !== null && classGrade !== exam.grade) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `${exam.name} is a ${GRADE_LABEL[exam.grade as Grade] ?? `Grade ${exam.grade}`} exam, but ${cls.name} is a ${cls.grade} class.`,
+    });
+  }
+}
+
 export const appRouter = router({
   system: systemRouter,
 
@@ -541,7 +566,7 @@ export const appRouter = router({
       }),
 
     updateClass: adminProcedure
-      .input(z.object({ id: z.number(), name: z.string().optional(), teacherId: z.number().nullable().optional() }))
+      .input(z.object({ id: z.number(), name: z.string().optional(), grade: z.string().optional(), teacherId: z.number().nullable().optional() }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
         await updateClass(id, data);
@@ -583,7 +608,8 @@ export const appRouter = router({
         z.object({
           subject: z.enum(["Math", "Science"]),
           contentDomain: z.string().min(1),
-          scienceSubDomain: z.enum(["Earth Science", "Biology", "Chemistry", "Physics"]).optional(),
+          grade: gradeSchema.optional(),
+          scienceSubDomain: scienceSubDomainSchema.optional(),
           session: z.enum(["math_session", "science_session"]).optional(),
           blockNumber: z.number().optional(),
           cognitiveDomain: z.enum(["Knowing", "Applying", "Reasoning"]),
@@ -621,7 +647,8 @@ export const appRouter = router({
           id: z.number(),
           subject: z.enum(["Math", "Science"]).optional(),
           contentDomain: z.string().optional(),
-          scienceSubDomain: z.enum(["Earth Science", "Biology", "Chemistry", "Physics"]).optional().nullable(),
+          grade: gradeSchema.optional(),
+          scienceSubDomain: scienceSubDomainSchema.optional().nullable(),
           session: z.enum(["math_session", "science_session"]).optional().nullable(),
           blockNumber: z.number().optional().nullable(),
           cognitiveDomain: z.enum(["Knowing", "Applying", "Reasoning"]).optional(),
@@ -645,6 +672,52 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    // Ready-made question packs (Grade 4 starter, Grade 8 extra). Additive and idempotent:
+    // a question is skipped when the same text already exists for that grade.
+    listQuestionPacks: adminProcedure.query(async () => {
+      const existing = await getAllQuestions();
+      const have = new Set(existing.map((q) => `${q.grade}|${q.questionText}`));
+      return Object.entries(QUESTION_PACKS).map(([id, pack]) => ({
+        id,
+        label: pack.label,
+        description: pack.description,
+        total: pack.questions.length,
+        alreadyAdded: pack.questions.filter((q) => have.has(`${q.grade}|${q.questionText}`)).length,
+      }));
+    }),
+
+    importQuestionPack: adminProcedure
+      .input(z.object({ packId: z.enum(["grade4", "grade8"]) }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+        const pack = QUESTION_PACKS[input.packId];
+        const existing = await getAllQuestions();
+        const have = new Set(existing.map((q) => `${q.grade}|${q.questionText}`));
+        const toAdd = pack.questions.filter((q) => !have.has(`${q.grade}|${q.questionText}`));
+        if (toAdd.length > 0) {
+          await db.insert(questionsTable).values(
+            toAdd.map((q) => ({
+              grade: q.grade,
+              subject: q.subject,
+              contentDomain: q.contentDomain,
+              scienceSubDomain: q.scienceSubDomain,
+              session: q.session,
+              cognitiveDomain: q.cognitiveDomain,
+              difficulty: q.difficulty,
+              questionType: q.questionType,
+              maxPoints: q.maxPoints,
+              questionText: q.questionText,
+              options: q.options ?? null,
+              correctAnswer: q.correctAnswer,
+              explanation: q.explanation,
+              imageUrl: q.imageUrl,
+            }))
+          );
+        }
+        return { added: toAdd.length, skipped: pack.questions.length - toAdd.length };
+      }),
+
     deleteQuestion: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
@@ -656,9 +729,15 @@ export const appRouter = router({
     listExams: adminProcedure.query(async () => getAllExams()),
 
     createExam: adminProcedure
-      .input(z.object({ name: z.string().min(1), description: z.string().optional(), durationMinutes: z.number().optional() }))
+      .input(z.object({ name: z.string().min(1), description: z.string().optional(), durationMinutes: z.number().optional(), grade: gradeSchema.optional() }))
       .mutation(async ({ input }) => {
-        await createExam(input);
+        const grade: Grade = input.grade ?? 8;
+        await createExam({
+          ...input,
+          grade,
+          ...GRADE_TIMING[grade],
+          durationMinutes: input.durationMinutes ?? defaultDuration(grade),
+        });
         return { success: true };
       }),
 
@@ -668,6 +747,7 @@ export const appRouter = router({
           id: z.number(),
           name: z.string().optional(),
           description: z.string().optional(),
+          grade: gradeSchema.optional(),
           durationMinutes: z.number().optional(),
           session1Minutes: z.number().optional(),
           breakMinutes: z.number().optional(),
@@ -697,6 +777,16 @@ export const appRouter = router({
     setExamQuestions: adminProcedure
       .input(z.object({ examId: z.number(), questionIds: z.array(z.number()) }))
       .mutation(async ({ input }) => {
+        const exam = await getExamById(input.examId);
+        if (!exam) throw new TRPCError({ code: "NOT_FOUND" });
+        const all = await getAllQuestions();
+        const wrongGrade = all.filter((q) => input.questionIds.includes(q.id) && q.grade !== exam.grade);
+        if (wrongGrade.length > 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `This is a Grade ${exam.grade} exam. ${wrongGrade.length} selected question(s) are for a different grade.`,
+          });
+        }
         await setExamQuestions(input.examId, input.questionIds);
         return { success: true };
       }),
@@ -704,6 +794,7 @@ export const appRouter = router({
         assignExamToClass: adminProcedure
       .input(z.object({ classId: z.number(), examId: z.number() }))
       .mutation(async ({ input, ctx }) => {
+        await assertExamMatchesClassGrade(input.classId, input.examId);
         await assignExamToClass(input.classId, input.examId, ctx.platformUser.id);
         return { success: true };
       }),
@@ -899,6 +990,7 @@ export const appRouter = router({
         if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
         if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
           throw new TRPCError({ code: "FORBIDDEN" });
+        await assertExamMatchesClassGrade(input.classId, input.examId);
         await assignExamToClass(input.classId, input.examId, ctx.platformUser.id);
         return { success: true };
       }),
@@ -1006,7 +1098,7 @@ export const appRouter = router({
             }));
             const reportData = generateReportData(
               { id: student.id, name: student.name, username: student.username },
-              { id: exam.id, name: exam.name },
+              { id: exam.id, name: exam.name, grade: exam.grade },
               examCls.name,
               {
                 totalScore: newTotals?.totalScore ?? freshAttempt.totalScore ?? 0,
@@ -1108,7 +1200,7 @@ export const appRouter = router({
             }));
             const reportData = generateReportData(
               { id: student.id, name: student.name, username: student.username },
-              { id: exam.id, name: exam.name },
+              { id: exam.id, name: exam.name, grade: exam.grade },
               examCls.name,
               {
                 totalScore: newTotals?.totalScore ?? freshAttempt.totalScore ?? 0,
@@ -1426,6 +1518,7 @@ export const appRouter = router({
           return {
             attemptId: attempt.id,
             examName: examData?.name ?? "Assessment",
+            grade: examData?.grade ?? 8,
             durationMinutes: examData?.durationMinutes ?? 90,
             session1Minutes: examData?.session1Minutes ?? 45,
             breakMinutes: examData?.breakMinutes ?? 5,
@@ -1484,6 +1577,7 @@ export const appRouter = router({
         return {
           attemptId: attempt.id,
           examName: examData.name,
+          grade: examData.grade,
           durationMinutes: examData.durationMinutes,
           session1Minutes: examData.session1Minutes,
           breakMinutes: examData.breakMinutes,
@@ -1697,7 +1791,7 @@ export const appRouter = router({
         if (student && exam && cls) {
           const reportData = generateReportData(
             { id: student.id, name: student.name, username: student.username },
-            { id: exam.id, name: exam.name },
+            { id: exam.id, name: exam.name, grade: exam.grade },
             cls.name,
             {
               totalScore,

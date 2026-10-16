@@ -212,3 +212,24 @@
 - [x] Verify assigned active exams through the student available-exams procedure
 - [x] Verify published-result access and unpublished-result blocking through the student result procedure
 - [x] Repair STD001’s stale individual exam assignment and re-test the available-exams procedure
+
+## Phase 21: Grade 4 Support and Extra Grade 8 Questions
+- [x] Add `grade` (4 or 8) to questions and exams; allow Life Science / Physical Science sub-domains (migration 0005)
+- [x] Grade picker and grade filter in the Question Bank; Grade 4 domains (Number, Measurement and Geometry, Data; Life, Physical, Earth Science)
+- [x] "Add question packs": Grade 4 starter pack (80 questions) and Grade 8 extra pack (105 questions), additive and safe to run twice
+- [x] Grade on exams (Grade 4 defaults to two 36-minute sessions); exam editor only offers questions of the exam's grade, plus "Add all shown"
+- [x] Class grade can be set when creating a class and changed later; exams can only be assigned to classes of the same grade
+- [x] Student dashboard, instructions and PDF reports show the right grade; larger question text for Grade 4
+- [x] Short numeric answers are marked by value ("48 crayons" and "x = 6" count as correct)
+- [x] Run `pnpm db:push` to apply migration 0005, then run `pnpm check` and `pnpm test` (44 tests passing)
+
+## Phase 22: School Branding (American School of Creative Science, Nad Al Sheba)
+- [x] School logo, crest and favicon added to client/public
+- [x] Colours taken from the crest (navy #2B2A7A, red #D23A27, blue #2F6EB4) and applied site-wide through theme tokens; Tailwind blue scale remapped to the school colours
+- [x] New login page with the school logo; password field now hidden by default with a Show button
+- [x] Removed the public demo-credentials panel (it showed the admin password on the login page)
+- [x] Crest and school name in the admin/teacher sidebar, student dashboard, exam instructions and exam screens
+- [x] Crest, school name and colours in student and class PDF reports
+- [x] Check the branded login page visually in preview
+- [ ] Check key pages visually on the deployed site after publishing (login, admin, teacher, student, exam instructions, exam interface, reports)
+- [ ] Verify the branded assets and school-colour theme render correctly on the live deployed domain

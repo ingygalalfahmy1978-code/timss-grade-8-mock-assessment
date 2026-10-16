@@ -3,6 +3,25 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ─── School brand palette (sampled from the school crest) ───────────────────
+   Navy #2B2A7A · Red #D23A27 · Blue #2F6EB4 · Grey #706F6F
+   The blue scale below is remapped to the crest colours so every existing
+   blue-* utility in the app follows the school's colours. */
+@theme {
+  --color-blue-50: #eef1fa;
+  --color-blue-100: #dde3f3;
+  --color-blue-200: #bcc8e8;
+  --color-blue-300: #90a6d8;
+  --color-blue-400: #5d83c5;
+  --color-blue-500: #2f6eb4;
+  --color-blue-600: #2a529a;
+  --color-blue-700: #2b2a7a;
+  --color-blue-800: #222163;
+  --color-blue-900: #1a194c;
+  --color-blue-950: #111033;
+  --font-brand: "Tenor Sans", "Optima", "Segoe UI", system-ui, sans-serif;
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -14,6 +33,15 @@
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
+  --color-brand-navy: var(--brand-navy);
+  --color-brand-navy-dark: var(--brand-navy-dark);
+  --color-brand-navy-deep: var(--brand-navy-deep);
+  --color-brand-red: var(--brand-red);
+  --color-brand-red-dark: var(--brand-red-dark);
+  --color-brand-coral: var(--brand-coral);
+  --color-brand-blue: var(--brand-blue);
+  --color-brand-grey: var(--brand-grey);
+  --color-brand-soft: var(--brand-soft);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
@@ -45,13 +73,22 @@
   --radius: 0.625rem;
 
   /* Professional blue/white TIMSS theme */
-  --background: oklch(0.98 0.005 240);
+  --brand-navy: #2b2a7a;
+  --brand-navy-dark: #1f1e5c;
+  --brand-navy-deep: #17164a;
+  --brand-red: #d23a27;
+  --brand-red-dark: #a3261e;
+  --brand-coral: #e34647;
+  --brand-blue: #2f6eb4;
+  --brand-grey: #706f6f;
+  --brand-soft: #f4f5fa;
+  --background: #f6f7fb;
   --foreground: oklch(0.15 0.02 240);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.15 0.02 240);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.15 0.02 240);
-  --primary: oklch(0.42 0.14 240);
+  --primary: #2b2a7a;
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.94 0.02 240);
   --secondary-foreground: oklch(0.25 0.05 240);
@@ -62,22 +99,22 @@
   --destructive: oklch(0.55 0.22 25);
   --border: oklch(0.88 0.02 240);
   --input: oklch(0.88 0.02 240);
-  --ring: oklch(0.42 0.14 240);
+  --ring: #2f6eb4;
 
-  --chart-1: oklch(0.42 0.14 240);
-  --chart-2: oklch(0.55 0.14 200);
-  --chart-3: oklch(0.65 0.14 160);
-  --chart-4: oklch(0.60 0.14 280);
-  --chart-5: oklch(0.70 0.14 100);
+  --chart-1: #2b2a7a;
+  --chart-2: #2f6eb4;
+  --chart-3: #d23a27;
+  --chart-4: #8e8dc2;
+  --chart-5: #706f6f;
 
-  --sidebar: oklch(0.20 0.06 240);
-  --sidebar-foreground: oklch(0.92 0.02 240);
-  --sidebar-primary: oklch(0.55 0.14 240);
+  --sidebar: #1f1e5c;
+  --sidebar-foreground: #e6e6f2;
+  --sidebar-primary: #2f6eb4;
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.28 0.06 240);
-  --sidebar-accent-foreground: oklch(0.92 0.02 240);
-  --sidebar-border: oklch(0.28 0.06 240);
-  --sidebar-ring: oklch(0.55 0.14 240);
+  --sidebar-accent: #2b2a7a;
+  --sidebar-accent-foreground: #e6e6f2;
+  --sidebar-border: #2b2a7a;
+  --sidebar-ring: #2f6eb4;
 }
 
 .dark {

@@ -230,7 +230,7 @@ export default function AnswerReview() {
                 key={c.id}
                 onClick={() => { setSelectedClassId(c.id); setSelectedExamId(null); setSelectedAttemptId(null); }}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  selectedClassId === c.id ? "bg-[oklch(0.42_0.14_240)] text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  selectedClassId === c.id ? "bg-brand-navy text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
                 {c.name}
@@ -249,7 +249,7 @@ export default function AnswerReview() {
                   key={e.examId}
                   onClick={() => { setSelectedExamId(e.examId); setSelectedAttemptId(null); }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    selectedExamId === e.examId ? "bg-[oklch(0.42_0.14_240)] text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    selectedExamId === e.examId ? "bg-brand-navy text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                   }`}
                 >
                   {e.examName}
@@ -300,7 +300,7 @@ export default function AnswerReview() {
                             onClick={(e) => { e.stopPropagation(); setSelectedAttemptId(a.id); }}
                             className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
                               selectedAttemptId === a.id
-                                ? "bg-[oklch(0.42_0.14_240)] text-white"
+                                ? "bg-brand-navy text-white"
                                 : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                             }`}
                           >
@@ -345,7 +345,7 @@ export default function AnswerReview() {
                     key={s}
                     onClick={() => setSubjectFilter(s)}
                     className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                      subjectFilter === s ? "bg-[oklch(0.42_0.14_240)] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      subjectFilter === s ? "bg-brand-navy text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                     }`}
                   >{s}</button>
                 ))}
@@ -355,7 +355,7 @@ export default function AnswerReview() {
                     key={s}
                     onClick={() => setStatusFilter(s)}
                     className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                      statusFilter === s ? "bg-[oklch(0.42_0.14_240)] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      statusFilter === s ? "bg-brand-navy text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                     }`}
                   >{s}</button>
                 ))}

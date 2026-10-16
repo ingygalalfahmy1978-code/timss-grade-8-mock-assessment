@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { SchoolCrest } from "@/components/SchoolBrand";
 import {
   AlertCircle, BookOpen, ChevronLeft, ChevronRight, Flag, Grid,
   Calculator, X, GripVertical, ArrowUp, ArrowDown, CheckCircle2,
@@ -92,6 +93,7 @@ type SavedAnswer = {
 type ExamData = {
   attemptId: number;
   examName: string;
+  grade?: number;
   durationMinutes: number;
   session1Minutes: number;
   breakMinutes: number;
@@ -1508,15 +1510,13 @@ export default function ExamInterface() {
   const maxPoints = currentQ.maxPoints || 1;
 
   return (
-    <div className="min-h-screen bg-[oklch(0.97_0.01_240)] flex flex-col">
+    <div className="min-h-screen bg-brand-soft flex flex-col">
       {/* ── Top Bar ── */}
       <header className={`${sessionColor} text-white sticky top-0 z-40 shadow-lg`}>
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           {/* Left */}
           <div className="flex items-center gap-3 min-w-0">
-            <div className={`flex-shrink-0 w-8 h-8 rounded-lg ${isSession1 ? "bg-blue-500" : "bg-emerald-500"} flex items-center justify-center`}>
-              <BookOpen className="w-4 h-4" />
-            </div>
+            <SchoolCrest size="sm" />
             <div className="min-w-0">
               <div className="font-bold text-sm truncate">{examData.examName}</div>
               <div className="text-white/60 text-xs">{sessionLabel} · Q{currentIndex + 1}/{questions.length}</div>
@@ -1587,7 +1587,7 @@ export default function ExamInterface() {
                   <img src={currentQ.imageUrl} alt="Question diagram" className="max-w-full max-h-72 mx-auto object-contain p-3" />
                 </div>
               )}
-              <div className="text-base leading-relaxed text-slate-900 font-medium whitespace-pre-wrap">{currentQ.questionText}</div>
+              <div className={`${examData.grade === 4 ? "text-lg sm:text-xl leading-relaxed" : "text-base leading-relaxed"} text-slate-900 font-medium whitespace-pre-wrap`}>{currentQ.questionText}</div>
             </div>
 
             <div className="p-7">
@@ -1616,7 +1616,7 @@ export default function ExamInterface() {
                           className="mt-0.5 w-4 h-4 accent-blue-600 flex-shrink-0" />
                         <div className="flex items-start gap-3">
                           <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${isSelected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>{optKey}</span>
-                          <span className="text-slate-800 leading-relaxed pt-0.5">{opt.text}</span>
+                          <span className={`text-slate-800 leading-relaxed pt-0.5 ${examData.grade === 4 ? "text-lg" : ""}`}>{opt.text}</span>
                         </div>
                       </label>
                     );

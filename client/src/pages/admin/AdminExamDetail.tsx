@@ -5,6 +5,7 @@ import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "wouter";
 import { toast } from "sonner";
+import { CONTENT_DOMAINS, type Grade } from "@shared/grades";
 
 export default function AdminExamDetail() {
   const { user } = usePlatformAuth();
@@ -25,8 +26,20 @@ export default function AdminExamDetail() {
   const examQuestions: Array<{ id: number; questionText: string; subject: string; contentDomain: string; cognitiveDomain: string; difficulty: string; questionType: string }> = (exam?.questions as Array<{ id: number; questionText: string; subject: string; contentDomain: string; cognitiveDomain: string; difficulty: string; questionType: string }>) ?? [];
   const examQuestionIds = new Set(examQuestions.map((q) => q.id));
 
+  const examGrade = ((exam as { grade?: number } | null | undefined)?.grade === 4 ? 4 : 8) as Grade;
+  const gradeDomains = [...CONTENT_DOMAINS[examGrade].Math, ...CONTENT_DOMAINS[examGrade].Science];
+  const addQuestions = async (questionIds: number[], message: string) => {
+    try {
+      await setExamQuestions.mutateAsync({ examId, questionIds });
+      toast.success(message);
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "Could not update the exam");
+    }
+  };
+
   const availableQuestions = (allQuestions ?? []).filter((q) => {
     if (examQuestionIds.has(q.id)) return false;
+    if (q.grade !== examGrade) return false;
     if (filterSubject !== "All" && q.subject !== filterSubject) return false;
     if (filterDomain !== "All" && q.contentDomain !== filterDomain) return false;
     return true;
@@ -55,6 +68,7 @@ export default function AdminExamDetail() {
               <h2 className="text-xl font-bold text-gray-900">{exam.name}</h2>
               {exam.description && <p className="text-gray-500 text-sm mt-1">{exam.description}</p>}
               <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${examGrade === 4 ? "bg-brand-red/10 text-brand-red-dark" : "bg-brand-navy/10 text-brand-navy"}`}>Grade {examGrade}</span>
                 <span>{exam.durationMinutes} minutes</span>
                 <span>              {examQuestions.length} questions</span>
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${exam.isPublished ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
@@ -73,7 +87,7 @@ export default function AdminExamDetail() {
               </button>
               <button
                 onClick={() => setShowBank(!showBank)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-[oklch(0.42_0.14_240)] text-white rounded-lg text-sm font-medium"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-navy text-white rounded-lg text-sm font-medium"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add Questions
@@ -106,8 +120,7 @@ export default function AdminExamDetail() {
                     <button
                       onClick={async () => {
                         const newIds = examQuestions.filter((eq) => eq.id !== q.id).map((eq) => eq.id);
-                        await setExamQuestions.mutateAsync({ examId, questionIds: newIds });
-                        toast.success("Question removed");
+                        await addQuestions(newIds, "Question removed");
                       }}
                       className="p-1 text-gray-400 hover:text-red-500 flex-shrink-0"
                     >
@@ -123,7 +136,18 @@ export default function AdminExamDetail() {
           {showBank && (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="px-5 py-3 border-b border-gray-100 bg-gray-50">
-                <h3 className="font-semibold text-gray-900 mb-2">Question Bank</h3>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <h3 className="font-semibold text-gray-900">Grade {examGrade} Question Bank</h3>
+                  {availableQuestions.length > 0 && (
+                    <button
+                      onClick={() => addQuestions([...examQuestions.map((eq) => eq.id), ...availableQuestions.map((q) => q.id)], `Added ${availableQuestions.length} questions to the exam`)}
+                      disabled={setExamQuestions.isPending}
+                      className="px-2.5 py-1 bg-blue-600 text-white rounded text-xs font-medium disabled:opacity-50"
+                    >
+                      Add all {availableQuestions.length} shown
+                    </button>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <select value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)} className="flex-1 border border-gray-200 rounded px-2 py-1 text-xs">
                     <option value="All">All Subjects</option>
@@ -132,7 +156,7 @@ export default function AdminExamDetail() {
                   </select>
                   <select value={filterDomain} onChange={(e) => setFilterDomain(e.target.value)} className="flex-1 border border-gray-200 rounded px-2 py-1 text-xs">
                     <option value="All">All Domains</option>
-                    {["Number", "Algebra", "Geometry", "Data and Probability", "Biology", "Chemistry", "Physics", "Earth Science"].map((d) => (
+                    {gradeDomains.map((d) => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
@@ -140,7 +164,7 @@ export default function AdminExamDetail() {
               </div>
               <div className="divide-y divide-gray-50 max-h-[500px] overflow-y-auto">
                 {availableQuestions.length === 0 ? (
-                  <div className="text-center py-8 text-gray-400 text-sm">No more questions available</div>
+                  <div className="text-center py-8 text-gray-400 text-sm">No more Grade {examGrade} questions available. Add more in the Question Bank (try "Add question packs").</div>
                 ) : (
                   availableQuestions.map((q) => (
                     <div key={q.id} className="px-5 py-3 flex items-start gap-3 hover:bg-gray-50">
@@ -155,8 +179,7 @@ export default function AdminExamDetail() {
                       <button
                         onClick={async () => {
                           const newIds = [...examQuestions.map((eq) => eq.id), q.id];
-                          await setExamQuestions.mutateAsync({ examId, questionIds: newIds });
-                          toast.success("Question added to exam");
+                          await addQuestions(newIds, "Question added to exam");
                         }}
                         className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 text-white rounded text-xs font-medium flex-shrink-0"
                       >

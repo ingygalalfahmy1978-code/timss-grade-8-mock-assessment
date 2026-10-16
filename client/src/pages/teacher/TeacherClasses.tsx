@@ -4,6 +4,7 @@ import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import { useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
+import { parseGrade } from "@shared/grades";
 import { ChevronRight, Play, Square, Users } from "lucide-react";
 
 type ClassItem = { id: number; name: string; grade: string; teacherId: number | null; studentCount?: number };
@@ -30,9 +31,13 @@ export default function TeacherClasses() {
 
   const handleActivate = async () => {
     if (!selectedClass || !selectedExamId) { toast.error("Select a class and exam"); return; }
-    await activateExam.mutateAsync({ classId: selectedClass, examId: Number(selectedExamId) });
-    toast.success("Exam activated for class");
-    setSelectedExamId("");
+    try {
+      await activateExam.mutateAsync({ classId: selectedClass, examId: Number(selectedExamId) });
+      toast.success("Exam activated for class");
+      setSelectedExamId("");
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "Could not activate the exam");
+    }
   };
 
   const handleDeactivate = async (examId: number) => {
@@ -62,7 +67,7 @@ export default function TeacherClasses() {
                   key={c.id}
                   onClick={() => setSelectedClass(c.id)}
                   className={`bg-white rounded-xl border-2 p-4 cursor-pointer transition-all ${
-                    selectedClass === c.id ? "border-[oklch(0.42_0.14_240)] shadow-md" : "border-gray-200 hover:border-gray-300"
+                    selectedClass === c.id ? "border-brand-navy shadow-md" : "border-gray-200 hover:border-gray-300"
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -118,7 +123,7 @@ export default function TeacherClasses() {
                     className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
                   >
                     <option value="">Select exam to activate...</option>
-                    {allExams?.filter((e) => e.isPublished).map((e) => (
+                    {allExams?.filter((e) => { const g = parseGrade(classes.find((c) => c.id === selectedClass)?.grade); return e.isPublished && (g === null || e.grade === g); }).map((e) => (
                       <option key={e.id} value={e.id}>{e.name}</option>
                     ))}
                   </select>

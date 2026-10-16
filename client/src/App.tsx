@@ -39,7 +39,7 @@ import MyResults from "./pages/student/MyResults";
 
 const Spinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-gray-50">
-    <div className="animate-spin w-8 h-8 border-2 border-[oklch(0.42_0.14_240)] border-t-transparent rounded-full" />
+    <div className="animate-spin w-8 h-8 border-2 border-brand-navy border-t-transparent rounded-full" />
   </div>
 );
 

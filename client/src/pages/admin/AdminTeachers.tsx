@@ -55,7 +55,7 @@ export default function AdminTeachers() {
           </div>
           <button
             onClick={() => setShowAdd(true)}
-            className="flex items-center gap-2 bg-[oklch(0.42_0.14_240)] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[oklch(0.38_0.14_240)] transition-colors"
+            className="flex items-center gap-2 bg-brand-navy text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-navy-dark transition-colors"
           >
             <UserPlus className="w-4 h-4" />
             Add Teacher
@@ -89,7 +89,7 @@ export default function AdminTeachers() {
               </div>
               <div className="px-6 py-4 border-t border-gray-100 flex gap-3 justify-end">
                 <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg">Cancel</button>
-                <button onClick={handleAdd} className="px-4 py-2 text-sm bg-[oklch(0.42_0.14_240)] text-white rounded-lg font-medium">Create Teacher</button>
+                <button onClick={handleAdd} className="px-4 py-2 text-sm bg-brand-navy text-white rounded-lg font-medium">Create Teacher</button>
               </div>
             </div>
           </div>

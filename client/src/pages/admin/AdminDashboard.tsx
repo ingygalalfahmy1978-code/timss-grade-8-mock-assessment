@@ -73,7 +73,7 @@ export default function AdminDashboard() {
     <PlatformLayout title="Admin Dashboard">
       <div className="space-y-8">
         {/* Welcome */}
-        <div className="bg-gradient-to-r from-[oklch(0.42_0.14_240)] to-[oklch(0.35_0.12_240)] rounded-xl p-6 text-white">
+        <div className="bg-gradient-to-r from-brand-navy to-brand-navy-dark rounded-xl p-6 text-white">
           <h2 className="text-xl font-bold">Welcome to the Assessment Platform</h2>
           <p className="text-white/80 mt-1 text-sm">
             Manage students, teachers, question banks, and mock exams from this dashboard.

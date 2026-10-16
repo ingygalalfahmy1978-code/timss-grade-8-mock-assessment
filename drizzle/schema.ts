@@ -56,14 +56,20 @@ export type StudentClass = typeof studentClasses.$inferSelect;
 export const questions = mysqlTable("questions", {
   id: int("id").autoincrement().primaryKey(),
   subject: mysqlEnum("subject", ["Math", "Science"]).notNull(),
+  // TIMSS grade this question is written for: 4 or 8
+  grade: int("grade").default(8).notNull(),
   contentDomain: varchar("content_domain", { length: 64 }).notNull(),
-  // Math: Number, Algebra, Geometry, Data and Probability
-  // Science: Biology, Chemistry, Physics, Earth Science
+  // Grade 8 Math: Number, Algebra, Geometry, Data and Probability
+  // Grade 8 Science: Biology, Chemistry, Physics, Earth Science
+  // Grade 4 Math: Number, Measurement and Geometry, Data
+  // Grade 4 Science: Life Science, Physical Science, Earth Science
   scienceSubDomain: mysqlEnum("science_sub_domain", [
     "Earth Science",
     "Biology",
     "Chemistry",
     "Physics",
+    "Life Science",
+    "Physical Science",
   ]),
   // Block assignment (1-14, matching TIMSS block structure)
   blockNumber: int("block_number"),
@@ -135,6 +141,9 @@ export const exams = mysqlTable("exams", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 128 }).notNull(),
   description: text("description"),
+  // TIMSS grade this exam is for: 4 or 8. Only questions of the same grade can be added,
+  // and it can only be assigned to classes of the same grade.
+  grade: int("grade").default(8).notNull(),
   // Total duration in minutes (default 90 = 45+45)
   durationMinutes: int("duration_minutes").default(90).notNull(),
   // Session 1 duration (Math) in minutes

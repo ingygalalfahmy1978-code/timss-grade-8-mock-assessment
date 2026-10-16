@@ -89,7 +89,7 @@ export default function TeacherClassDetail() {
             </button>
             <button
               onClick={handleDownloadClassReport}
-              className="flex items-center gap-2 px-3 py-1.5 bg-[oklch(0.42_0.14_240)] text-white rounded-lg text-sm font-medium hover:bg-[oklch(0.38_0.14_240)]"
+              className="flex items-center gap-2 px-3 py-1.5 bg-brand-navy text-white rounded-lg text-sm font-medium hover:bg-brand-navy-dark"
             >
               <Download className="w-4 h-4" />
               Download Class Report

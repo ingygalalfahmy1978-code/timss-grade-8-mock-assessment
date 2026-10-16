@@ -4,6 +4,7 @@ import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import { Plus, Trash2, Users } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { GRADES, GRADE_LABEL, parseGrade } from "@shared/grades";
 
 export default function AdminClasses() {
   const { user } = usePlatformAuth();
@@ -21,7 +22,7 @@ export default function AdminClasses() {
 
   const [showAdd, setShowAdd] = useState(false);
   const [selectedClass, setSelectedClass] = useState<number | null>(null);
-  const [form, setForm] = useState({ name: "", teacherId: "" });
+  const [form, setForm] = useState({ name: "", teacherId: "", grade: GRADE_LABEL[8] });
   const [enrollStudentId, setEnrollStudentId] = useState("");
   const [assignExamId, setAssignExamId] = useState("");
 
@@ -35,10 +36,10 @@ export default function AdminClasses() {
 
   const handleCreate = async () => {
     if (!form.name) { toast.error("Class name is required"); return; }
-    await createClass.mutateAsync({ name: form.name, teacherId: form.teacherId ? Number(form.teacherId) : undefined });
+    await createClass.mutateAsync({ name: form.name, grade: form.grade, teacherId: form.teacherId ? Number(form.teacherId) : undefined });
     toast.success("Class created");
     setShowAdd(false);
-    setForm({ name: "", teacherId: "" });
+    setForm({ name: "", teacherId: "", grade: GRADE_LABEL[8] });
   };
 
   return (
@@ -51,7 +52,7 @@ export default function AdminClasses() {
           </div>
           <button
             onClick={() => setShowAdd(true)}
-            className="flex items-center gap-2 bg-[oklch(0.42_0.14_240)] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[oklch(0.38_0.14_240)]"
+            className="flex items-center gap-2 bg-brand-navy text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-navy-dark"
           >
             <Plus className="w-4 h-4" />
             Add Class
@@ -67,7 +68,13 @@ export default function AdminClasses() {
               <div className="px-6 py-5 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Class Name *</label>
-                  <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Class 8C" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
+                  <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={form.grade === GRADE_LABEL[4] ? "e.g. Class 4A" : "e.g. Class 8C"} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Grade *</label>
+                  <select value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                    {GRADES.map((g) => <option key={g} value={GRADE_LABEL[g]}>{GRADE_LABEL[g]}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Assign Teacher</label>
@@ -79,7 +86,7 @@ export default function AdminClasses() {
               </div>
               <div className="px-6 py-4 border-t border-gray-100 flex gap-3 justify-end">
                 <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg">Cancel</button>
-                <button onClick={handleCreate} className="px-4 py-2 text-sm bg-[oklch(0.42_0.14_240)] text-white rounded-lg font-medium">Create</button>
+                <button onClick={handleCreate} className="px-4 py-2 text-sm bg-brand-navy text-white rounded-lg font-medium">Create</button>
               </div>
             </div>
           </div>
@@ -96,7 +103,7 @@ export default function AdminClasses() {
                   key={c.id}
                   onClick={() => setSelectedClass(c.id)}
                   className={`bg-white rounded-xl border-2 p-4 cursor-pointer transition-all ${
-                    selectedClass === c.id ? "border-[oklch(0.42_0.14_240)] shadow-md" : "border-gray-200 hover:border-gray-300"
+                    selectedClass === c.id ? "border-brand-navy shadow-md" : "border-gray-200 hover:border-gray-300"
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -128,6 +135,24 @@ export default function AdminClasses() {
           {/* Class detail */}
           {selectedClass && (
             <div className="lg:col-span-2 space-y-4">
+              {/* Class grade */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="font-semibold text-gray-900">Class grade</h4>
+                  <p className="text-xs text-gray-500 mt-0.5">Students in this class only see exams for this grade.</p>
+                </div>
+                <select
+                  value={parseGrade(classes?.find((c) => c.id === selectedClass)?.grade) ?? 8}
+                  onChange={async (e) => {
+                    await updateClass.mutateAsync({ id: selectedClass, grade: GRADE_LABEL[Number(e.target.value) as 4 | 8] });
+                    toast.success("Class grade updated");
+                  }}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                >
+                  {GRADES.map((g) => <option key={g} value={g}>{GRADE_LABEL[g]}</option>)}
+                </select>
+              </div>
+
               {/* Enroll student */}
               <div className="bg-white rounded-xl border border-gray-200 p-5">
                 <h4 className="font-semibold text-gray-900 mb-3">Enroll Student</h4>
@@ -149,7 +174,7 @@ export default function AdminClasses() {
                       setEnrollStudentId("");
                       toast.success("Student enrolled");
                     }}
-                    className="px-4 py-2 bg-[oklch(0.42_0.14_240)] text-white rounded-lg text-sm font-medium"
+                    className="px-4 py-2 bg-brand-navy text-white rounded-lg text-sm font-medium"
                   >
                     Enroll
                   </button>
@@ -196,14 +221,23 @@ export default function AdminClasses() {
                     className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
                   >
                     <option value="">Select exam...</option>
-                    {exams?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    {exams
+                      ?.filter((e) => {
+                        const g = parseGrade(classes?.find((c) => c.id === selectedClass)?.grade);
+                        return g === null || e.grade === g;
+                      })
+                      .map((e) => <option key={e.id} value={e.id}>{e.name} (Grade {e.grade})</option>)}
                   </select>
                   <button
                     onClick={async () => {
                       if (!assignExamId) return;
-                      await assignExam.mutateAsync({ classId: selectedClass, examId: Number(assignExamId) });
-                      setAssignExamId("");
-                      toast.success("Exam assigned and activated");
+                      try {
+                        await assignExam.mutateAsync({ classId: selectedClass, examId: Number(assignExamId) });
+                        setAssignExamId("");
+                        toast.success("Exam assigned and activated");
+                      } catch (e: unknown) {
+                        toast.error((e as Error).message || "Could not assign the exam");
+                      }
                     }}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium"
                   >

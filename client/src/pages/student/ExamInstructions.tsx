@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { BrandStripe, SchoolCrest } from "@/components/SchoolBrand";
 import { useParams, useLocation } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -36,7 +37,7 @@ export default function ExamInstructions() {
 
   if (isError) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[oklch(0.97_0.01_240)]">
+      <div className="min-h-screen flex items-center justify-center bg-brand-soft">
         <div className="text-center">
           <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
           <p className="text-gray-600">Unable to load exam information.</p>
@@ -52,19 +53,18 @@ export default function ExamInstructions() {
   const totalMin = session1Min + breakMin + session2Min;
 
   return (
-    <div className="min-h-screen bg-[oklch(0.97_0.01_240)] flex flex-col">
+    <div className="min-h-screen bg-brand-soft flex flex-col">
       {/* Header */}
-      <header className="bg-[oklch(0.20_0.06_240)] text-white px-6 py-4 flex-shrink-0">
+      <header className="bg-brand-navy-deep text-white px-6 py-4 flex-shrink-0">
         <div className="max-w-3xl mx-auto flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-[oklch(0.42_0.14_240)] flex items-center justify-center">
-            <BookOpen className="w-5 h-5" />
-          </div>
+          <SchoolCrest />
           <div>
-            <div className="font-bold text-sm">Grade 8 TIMSS Assessment Platform</div>
+            <div className="font-bold text-sm">Grade {examInfo?.exam.grade ?? 8} TIMSS Mock Assessment · American School of Creative Science</div>
             <div className="text-white/50 text-xs">{examInfo?.exam.name ?? "Assessment"} — {examInfo?.className}</div>
           </div>
         </div>
       </header>
+      <BrandStripe />
 
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
@@ -118,12 +118,16 @@ export default function ExamInstructions() {
               <FlaskConical className="w-4 h-4 text-emerald-600" /> Science Sub-Domains Covered
             </h2>
             <div className="grid grid-cols-2 gap-2">
-              {[
+              {(examInfo?.exam.grade === 4 ? [
+                { label: "Life Science", desc: "Plants, animals, life cycles, food chains, health", color: "bg-green-50 border-green-200 text-green-800" },
+                { label: "Physical Science", desc: "Materials, magnets, light, sound, forces, electricity", color: "bg-orange-50 border-orange-200 text-orange-800" },
+                { label: "Earth Science", desc: "Rocks, water, weather, the Sun, Moon and Earth", color: "bg-sky-50 border-sky-200 text-sky-800" },
+              ] : [
                 { label: "Earth Science", desc: "Earth structure, atmosphere, oceans, space", color: "bg-sky-50 border-sky-200 text-sky-800" },
                 { label: "Biology", desc: "Life processes, ecosystems, genetics", color: "bg-green-50 border-green-200 text-green-800" },
                 { label: "Chemistry", desc: "Matter, reactions, periodic table", color: "bg-purple-50 border-purple-200 text-purple-800" },
                 { label: "Physics", desc: "Forces, energy, waves, electricity", color: "bg-orange-50 border-orange-200 text-orange-800" },
-              ].map(sd => (
+              ]).map(sd => (
                 <div key={sd.label} className={`rounded-xl border p-3 ${sd.color}`}>
                   <div className="font-semibold text-sm">{sd.label}</div>
                   <div className="text-xs opacity-70 mt-0.5">{sd.desc}</div>
@@ -200,7 +204,7 @@ export default function ExamInstructions() {
               </span>
             </label>
             <button onClick={handleBegin} disabled={starting || !agreed}
-              className="w-full flex items-center justify-center gap-2 py-3.5 bg-[oklch(0.42_0.14_240)] hover:bg-[oklch(0.38_0.14_240)] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-base transition-colors">
+              className="w-full flex items-center justify-center gap-2 py-3.5 bg-brand-navy hover:bg-brand-navy-dark disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-base transition-colors">
               {starting ? (
                 <><div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" /> Starting...</>
               ) : (
