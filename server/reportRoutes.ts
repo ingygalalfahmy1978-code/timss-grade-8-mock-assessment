@@ -1,8 +1,10 @@
 import { Router, Request, Response } from "express";
-import { getReportByAttemptId, getReportsByClass } from "./db";
+import { getAttemptById, getClassById, getReportByAttemptId, getReportsByClass } from "./db";
 import PDFDocument from "pdfkit";
 import { SCHOOL_CAMPUS, SCHOOL_NAME } from "@shared/brand";
 import { SCHOOL_CREST_PNG } from "./brandAssets";
+import { canAccessClass } from "./accessControl";
+import { finiteNumber, getReportMaxScore, normalizeBreakdown, normalizeSubjectScore, type ReportBreakdown } from "./reportData";
 
 type ReportData = {
   studentName: string;
@@ -11,14 +13,17 @@ type ReportData = {
   examName: string;
   grade?: number;
   totalScore: number;
-  maxScore: number;
+  maxScore?: number;
+  totalMaxPoints?: number;
   percentage: number;
   mathScore: number;
   mathTotal: number;
+  mathMaxPoints?: number;
   scienceScore: number;
   scienceTotal: number;
-  contentDomainBreakdown: Record<string, { correct: number; total: number; percentage: number }>;
-  cognitiveDomainBreakdown: Record<string, { correct: number; total: number; percentage: number }>;
+  scienceMaxPoints?: number;
+  contentDomainBreakdown: Record<string, ReportBreakdown>;
+  cognitiveDomainBreakdown: Record<string, ReportBreakdown>;
   strengths: string[];
   weaknesses: string[];
   misconceptionNotes: string[];
@@ -129,14 +134,14 @@ async function generateStudentPDF(data: ReportData): Promise<Buffer> {
   // ── Score Summary ────────────────────────────────────────────────────────────
   y = sectionHeading(doc, "Score Summary", y);
 
-  const mathPct = data.mathTotal > 0 ? Math.round((data.mathScore / data.mathTotal) * 100) : data.mathScore ?? 0;
-  const sciPct = data.scienceTotal > 0 ? Math.round((data.scienceScore / data.scienceTotal) * 100) : data.scienceScore ?? 0;
+  const math = normalizeSubjectScore(data.mathScore, data.mathTotal, data.mathMaxPoints);
+  const science = normalizeSubjectScore(data.scienceScore, data.scienceTotal, data.scienceMaxPoints);
 
   const scoreCards = [
     { label: "Overall %", value: `${data.percentage ?? 0}%`, color: BLUE },
-    { label: "Total Score", value: `${data.totalScore ?? 0}/${data.maxScore ?? 0}`, color: NAVY },
-    { label: "Math Score", value: `${mathPct}%`, color: "#4338ca" },
-    { label: "Science Score", value: `${sciPct}%`, color: "#059669" },
+    { label: "Total Score", value: `${data.totalScore ?? 0}/${getReportMaxScore(data)}`, color: NAVY },
+    { label: "Math Score", value: `${math.percentage}%`, color: "#4338ca" },
+    { label: "Science Score", value: `${science.percentage}%`, color: "#059669" },
   ];
   const scW = 124;
   scoreCards.forEach((sc, i) => {
@@ -172,19 +177,20 @@ async function generateStudentPDF(data: ReportData): Promise<Buffer> {
     y += 20;
   } else {
     domainEntries.forEach(([domain, d], i) => {
+      const normalized = normalizeBreakdown(d);
       const rowBg = i % 2 === 0 ? WHITE : LIGHT;
       rect(doc, L, y, PAGE_W, 16, rowBg);
       doc.save().rect(L, y, PAGE_W, 16).strokeColor(BORDER).lineWidth(0.3).stroke().restore();
       doc.font("Helvetica").fontSize(8).fillColor(TEXT).text(domain, L + 6, y + 4, { width: 220 });
-      doc.font("Helvetica-Bold").fontSize(8).fillColor(NAVY).text(`${d.correct}/${d.total}`, L + 232, y + 4, { width: 60, align: "center" });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(NAVY).text(`${normalized.correct}/${normalized.total}`, L + 232, y + 4, { width: 60, align: "center" });
       // Progress bar
       const barX = L + 298;
       const barW = 140;
       const barH = 7;
       const barY = y + 5;
       rect(doc, barX, barY, barW, barH, BORDER);
-      rect(doc, barX, barY, Math.round(barW * (d.percentage / 100)), barH, BLUE);
-      doc.font("Helvetica").fontSize(7.5).fillColor(GRAY).text(`${d.percentage}%`, barX + barW + 6, y + 4);
+      rect(doc, barX, barY, Math.round(barW * (normalized.percentage / 100)), barH, BLUE);
+      doc.font("Helvetica").fontSize(7.5).fillColor(GRAY).text(`${normalized.percentage}%`, barX + barW + 6, y + 4);
       y += 16;
     });
   }
@@ -206,12 +212,13 @@ async function generateStudentPDF(data: ReportData): Promise<Buffer> {
     y += 20;
   } else {
     cogEntries.forEach(([domain, d], i) => {
+      const normalized = normalizeBreakdown(d);
       const rowBg = i % 2 === 0 ? WHITE : LIGHT;
       rect(doc, L, y, PAGE_W, 16, rowBg);
       doc.save().rect(L, y, PAGE_W, 16).strokeColor(BORDER).lineWidth(0.3).stroke().restore();
       doc.font("Helvetica").fontSize(8).fillColor(TEXT).text(domain, L + 6, y + 4, { width: 220 });
-      doc.font("Helvetica-Bold").fontSize(8).fillColor(NAVY).text(`${d.correct}/${d.total}`, L + 232, y + 4, { width: 80, align: "center" });
-      doc.font("Helvetica-Bold").fontSize(8).fillColor(BLUE).text(`${d.percentage}%`, L + 318, y + 4, { width: 197, align: "center" });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(NAVY).text(`${normalized.correct}/${normalized.total}`, L + 232, y + 4, { width: 80, align: "center" });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(BLUE).text(`${normalized.percentage}%`, L + 318, y + 4, { width: 197, align: "center" });
       y += 16;
     });
   }
@@ -318,7 +325,7 @@ async function generateClassPDF(reports: { reportData: unknown }[]): Promise<Buf
   const className = firstData?.className ?? "Class";
   const examName = firstData?.examName ?? "";
   const avgPct = reports.length > 0
-    ? Math.round(reports.reduce((sum, r) => sum + ((r.reportData as unknown as ReportData).percentage ?? 0), 0) / reports.length)
+    ? Math.round(reports.reduce((sum, r) => sum + finiteNumber((r.reportData as unknown as ReportData).percentage), 0) / reports.length)
     : 0;
 
   // ── Header ──────────────────────────────────────────────────────────────────
@@ -371,8 +378,9 @@ async function generateClassPDF(reports: { reportData: unknown }[]): Promise<Buf
 
   reports.forEach((r, idx) => {
     const d = r.reportData as unknown as ReportData;
-    const mathPct = d.mathTotal > 0 ? Math.round((d.mathScore / d.mathTotal) * 100) : d.mathScore ?? 0;
-    const sciPct = d.scienceTotal > 0 ? Math.round((d.scienceScore / d.scienceTotal) * 100) : d.scienceScore ?? 0;
+    const math = normalizeSubjectScore(d.mathScore, d.mathTotal, d.mathMaxPoints);
+    const science = normalizeSubjectScore(d.scienceScore, d.scienceTotal, d.scienceMaxPoints);
+    const percentage = finiteNumber(d.percentage);
     const iColor = interventionColor(d.recommendedInterventionGroup ?? "");
     const rowBg = idx % 2 === 0 ? WHITE : LIGHT;
 
@@ -386,10 +394,10 @@ async function generateClassPDF(reports: { reportData: unknown }[]): Promise<Buf
       { text: (d as ReportData & { studentCode?: string }).studentCode ?? "—", color: GRAY, bold: false },
       { text: d.studentName, color: TEXT, bold: true },
       { text: d.examName, color: TEXT, bold: false },
-      { text: `${d.percentage ?? 0}%`, color: d.percentage >= 70 ? GREEN : d.percentage >= 50 ? AMBER : RED, bold: true },
-      { text: `${d.totalScore ?? 0}/${d.maxScore ?? 0}`, color: TEXT, bold: false },
-      { text: `${mathPct}%`, color: TEXT, bold: false },
-      { text: `${sciPct}%`, color: TEXT, bold: false },
+      { text: `${percentage}%`, color: percentage >= 70 ? GREEN : percentage >= 50 ? AMBER : RED, bold: true },
+      { text: `${d.totalScore ?? 0}/${getReportMaxScore(d)}`, color: TEXT, bold: false },
+      { text: `${math.percentage}%`, color: TEXT, bold: false },
+      { text: `${science.percentage}%`, color: TEXT, bold: false },
       { text: d.recommendedInterventionGroup?.split(" – ")[0] ?? "", color: iColor, bold: true },
     ];
 
@@ -411,8 +419,33 @@ async function generateClassPDF(reports: { reportData: unknown }[]): Promise<Buf
   return pdfToBuffer(doc);
 }
 
+type PlatformUser = { id: number; role: "admin" | "teacher" | "student" };
+
+/** Admins see every class; teachers only the classes they teach. */
+async function canSeeClass(user: PlatformUser, classId: number): Promise<boolean> {
+  const cls = await getClassById(classId);
+  return canAccessClass(user, cls?.teacherId ?? null);
+}
+
+/** Staff of the class, or the student themself once results are published. */
+async function canSeeAttempt(user: PlatformUser, attemptId: number, studentId: number, classId: number): Promise<boolean> {
+  if (user.role !== "student") return canSeeClass(user, classId);
+  if (studentId !== user.id) return false;
+  const attempt = await getAttemptById(attemptId);
+  return !!attempt?.resultsPublished;
+}
+
 export function registerReportRoutes(app: import("express").Application): void {
   const router = Router();
+
+  // Every report download needs a signed-in platform user.
+  router.use(async (req: Request, res: Response, next) => {
+    const { getPlatformUserFromToken } = await import("./routers");
+    const user = await getPlatformUserFromToken(req.cookies?.timss_session);
+    if (!user) { res.status(401).send("Please sign in to download reports."); return; }
+    res.locals.user = user;
+    next();
+  });
 
   // Download individual student report by attemptId as PDF
   router.get("/attempt/:attemptId/pdf", async (req: Request, res: Response) => {
@@ -420,6 +453,7 @@ export function registerReportRoutes(app: import("express").Application): void {
       const attemptId = Number(req.params.attemptId);
       const report = await getReportByAttemptId(attemptId);
       if (!report) { res.status(404).send("Report not found"); return; }
+      if (!(await canSeeAttempt(res.locals.user, attemptId, report.studentId, report.classId))) { res.status(403).send("You do not have access to this report."); return; }
       const data = report.reportData as unknown as ReportData;
       const pdf = await generateStudentPDF(data);
       const filename = `report-${(data.studentName ?? "student").replace(/\s+/g, "-")}-${(data.examName ?? "exam").replace(/\s+/g, "-")}.pdf`;
@@ -454,6 +488,7 @@ export function registerReportRoutes(app: import("express").Application): void {
       const reports = await getReportsByStudent(Number(studentId));
       const classReport = reports.find((r) => r.classId === Number(classId));
       if (!classReport) { res.status(404).send("Report not found"); return; }
+      if (!(await canSeeAttempt(res.locals.user, classReport.attemptId, classReport.studentId, classReport.classId))) { res.status(403).send("You do not have access to this report."); return; }
       const data = classReport.reportData as unknown as ReportData;
       const pdf = await generateStudentPDF(data);
       const filename = `report-${(data.studentName ?? "student").replace(/\s+/g, "-")}.pdf`;
@@ -470,6 +505,7 @@ export function registerReportRoutes(app: import("express").Application): void {
   router.get("/class/:classId/pdf", async (req: Request, res: Response) => {
     try {
       const classId = Number(req.params.classId);
+      if (!(await canSeeClass(res.locals.user, classId))) { res.status(403).send("You do not have access to this class."); return; }
       const reports = await getReportsByClass(classId);
       if (!reports.length) { res.status(404).send("No reports found for this class"); return; }
       const pdf = await generateClassPDF(reports);

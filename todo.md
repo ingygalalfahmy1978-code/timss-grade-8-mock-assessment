@@ -221,7 +221,7 @@
 - [x] Class grade can be set when creating a class and changed later; exams can only be assigned to classes of the same grade
 - [x] Student dashboard, instructions and PDF reports show the right grade; larger question text for Grade 4
 - [x] Short numeric answers are marked by value ("48 crayons" and "x = 6" count as correct)
-- [x] Run `pnpm db:push` to apply migration 0005, then run `pnpm check` and `pnpm test` (44 tests passing)
+- [x] Run `pnpm db:push` to apply migration 0005, then run `pnpm check` and `pnpm test` (51 tests passing)
 
 ## Phase 22: School Branding (American School of Creative Science, Nad Al Sheba)
 - [x] School logo, crest and favicon added to client/public
@@ -230,6 +230,19 @@
 - [x] Removed the public demo-credentials panel (it showed the admin password on the login page)
 - [x] Crest and school name in the admin/teacher sidebar, student dashboard, exam instructions and exam screens
 - [x] Crest, school name and colours in student and class PDF reports
-- [x] Check the branded login page visually in preview
-- [ ] Check key pages visually on the deployed site after publishing (login, admin, teacher, student, exam instructions, exam interface, reports)
-- [ ] Verify the branded assets and school-colour theme render correctly on the live deployed domain
+- [ ] Check the pages visually after deploying
+
+## Phase 23: Excel Export and Report Security
+- [x] Teacher → Reports: "Export class results" downloads an Excel file (CSV) with every student's score, Maths/Science, each domain and thinking level, class average and who has not submitted
+- [x] "Export question analysis" downloads how the class did on each question, hardest first
+- [x] Teachers can only load reports and exports for classes they teach (admins see all)
+- [x] PDF report downloads now require sign-in; students only get their own report once results are published
+
+## Phase 24: Grade 4, Export and Security Release Validation
+- [x] Load the 80-question Grade 4 starter pack and verify it through the Grade 4 Question Bank filter
+- [x] Generate and inspect class-results and question-analysis Excel exports from the teacher Reports interface
+- [x] Verify anonymous, student, and administrator PDF-report access boundaries
+- [ ] Make PDF report generation tolerant of incomplete legacy report data
+- [ ] Re-run TypeScript and the full automated suite after the compatibility fix
+- [ ] Save the validated release checkpoint and push it to the connected GitHub repository
+- [ ] Change live hosting visibility to Public, publish, and verify the live Grade 4/8 login page

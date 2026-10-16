@@ -1,7 +1,8 @@
 import PlatformLayout from "@/components/PlatformLayout";
 import { trpc } from "@/lib/trpc";
 import { usePlatformAuth } from "@/hooks/usePlatformAuth";
-import { Download, Pencil, Eye, EyeOff, CheckCircle } from "lucide-react";
+import { Download, Pencil, Eye, EyeOff, CheckCircle, FileSpreadsheet } from "lucide-react";
+import { exportClassResults, exportQuestionAnalysis, type ClassExport } from "@/lib/excelExport";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -75,6 +76,26 @@ export default function TeacherReports() {
   };
 
   const [, navigate] = useLocation();
+  const [exportExamId, setExportExamId] = useState<string>("all");
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async (kind: "results" | "questions") => {
+    if (!selectedClassId) return;
+    setExporting(true);
+    try {
+      const examId = exportExamId === "all" ? undefined : Number(exportExamId);
+      const data = (await utils.teacher.exportClassResults.fetch({ classId: selectedClassId, examId })) as unknown as ClassExport;
+      if (!data.rows.length) { toast.info("No submitted results to export yet."); return; }
+      const examLabel = examId ? (examGroups.find((e) => e.examId === examId)?.examName ?? "Exam") : "All exams";
+      if (kind === "results") exportClassResults(data, examLabel);
+      else exportQuestionAnalysis(data, examLabel);
+      toast.success("Excel file downloaded.");
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "Could not export the results.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // Group reports by exam for the "Publish All" button
   const examGroups = classReports
@@ -135,6 +156,35 @@ export default function TeacherReports() {
             ))}
           </div>
         </div>
+
+        {/* Export to Excel */}
+        {selectedClassId && examGroups.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2"><FileSpreadsheet className="w-4 h-4 text-green-700" /> Export to Excel</h3>
+            <p className="text-xs text-gray-500 mb-3">Every student's score, Maths and Science scores, each content domain and thinking level, the class average, and who has not submitted yet. Opens in Excel or Google Sheets.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <select value={exportExamId} onChange={(e) => setExportExamId(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm">
+                <option value="all">All exams</option>
+                {examGroups.map((eg) => <option key={eg.examId} value={eg.examId}>{eg.examName}</option>)}
+              </select>
+              <button
+                onClick={() => handleExport("results")}
+                disabled={exporting}
+                className="flex items-center gap-2 px-3 py-1.5 bg-green-700 hover:bg-green-800 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                {exporting ? "Preparing..." : "Export class results"}
+              </button>
+              <button
+                onClick={() => handleExport("questions")}
+                disabled={exporting}
+                className="flex items-center gap-2 px-3 py-1.5 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium disabled:opacity-50"
+              >
+                Export question analysis
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Bulk Publish by Exam */}
         {selectedClassId && examGroups.length > 0 && (

@@ -70,6 +70,8 @@ import { systemRouter } from "./_core/systemRouter";
 import { matchesNumericAnswer } from "./numericAnswer";
 import { QUESTION_PACKS } from "./questionPacks";
 import { questions as questionsTable } from "../drizzle/schema";
+import { canAccessClass } from "./accessControl";
+import { finiteNumber, getReportMaxScore, normalizeBreakdownMap, normalizeSubjectScore } from "./reportData";
 import { publicProcedure, router } from "./_core/trpc";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -97,6 +99,15 @@ async function verifyPlatformToken(token: string) {
 }
 
 const PLATFORM_COOKIE = "timss_session";
+
+/** Signed-in platform user for a session cookie, or null. Used by the PDF report routes. */
+export async function getPlatformUserFromToken(token: string | undefined) {
+  if (!token) return null;
+  const payload = await verifyPlatformToken(token);
+  if (!payload || !payload.sub) return null;
+  const user = await getPlatformUserById(Number(payload.sub));
+  return user && user.isActive ? user : null;
+}
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 const platformProcedure = publicProcedure.use(async ({ ctx, next }) => {
@@ -1035,14 +1046,103 @@ export const appRouter = router({
 
     getStudentReport: teacherOrAdminProcedure
       .input(z.object({ attemptId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        const attempt = await getAttemptById(input.attemptId);
+        if (!attempt) throw new TRPCError({ code: "NOT_FOUND" });
+        const cls = await getClassById(attempt.classId);
+        if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
+        if (!canAccessClass(ctx.platformUser, cls.teacherId))
+          throw new TRPCError({ code: "FORBIDDEN" });
         return getReportByAttemptId(input.attemptId);
       }),
 
     getClassReports: teacherOrAdminProcedure
       .input(z.object({ classId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
+        const cls = await getClassById(input.classId);
+        if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
         return getReportsByClass(input.classId);
+      }),
+
+    // Everything the teacher needs for the Excel export of one class (optionally one exam):
+    // one row per submitted attempt, plus how the class did on each question.
+    exportClassResults: teacherOrAdminProcedure
+      .input(z.object({ classId: z.number(), examId: z.number().optional() }))
+      .query(async ({ input, ctx }) => {
+        const cls = await getClassById(input.classId);
+        if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
+        if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
+          throw new TRPCError({ code: "FORBIDDEN" });
+        const teacher = cls.teacherId ? await getPlatformUserById(cls.teacherId) : null;
+
+        const reports = (await getReportsByClass(input.classId)).filter((r) => !input.examId || r.examId === input.examId);
+        const attempts = await getAttemptsByClass(input.classId);
+        const students = await getStudentsInClass(input.classId);
+
+        const rows = reports.map((r) => {
+          const d = r.reportData as Record<string, unknown>;
+          const attempt = attempts.find((a) => a.id === r.attemptId);
+          const student = students.find((s) => s.id === r.studentId);
+          const math = normalizeSubjectScore(d.mathScore, d.mathTotal, d.mathMaxPoints);
+          const science = normalizeSubjectScore(d.scienceScore, d.scienceTotal, d.scienceMaxPoints);
+          return {
+            attemptId: r.attemptId,
+            studentName: String(d.studentName ?? student?.name ?? ""),
+            studentCode: String(d.studentCode ?? student?.username ?? ""),
+            examName: String(d.examName ?? ""),
+            grade: Number(d.grade ?? 8),
+            submittedAt: attempt?.submittedAt ?? (d.submittedAt as string | undefined) ?? null,
+            timeSpentSeconds: Number(d.timeSpentSeconds ?? attempt?.timeSpentSeconds ?? 0),
+            totalScore: finiteNumber(d.totalScore),
+            totalMaxPoints: getReportMaxScore(d),
+            percentage: finiteNumber(d.percentage),
+            mathScore: math.score,
+            mathMaxPoints: math.maxPoints,
+            scienceScore: science.score,
+            scienceMaxPoints: science.maxPoints,
+            contentDomains: normalizeBreakdownMap(d.contentDomainBreakdown),
+            cognitiveDomains: normalizeBreakdownMap(d.cognitiveDomainBreakdown),
+            interventionGroup: String(d.recommendedInterventionGroup ?? ""),
+            strengths: (d.strengths as string[] | undefined) ?? [],
+            weaknesses: (d.weaknesses as string[] | undefined) ?? [],
+            resultsPublished: attempt?.resultsPublished ?? false,
+          };
+        });
+
+        // Per-question analysis across the exported attempts
+        const perQuestion = new Map<number, { questionText: string; subject: string; contentDomain: string; answered: number; correct: number; points: number; maxPoints: number }>();
+        for (const row of rows) {
+          const answers = await getAnswersForAttempt(row.attemptId);
+          for (const a of answers) {
+            const q = perQuestion.get(a.questionId) ?? {
+              questionText: a.questionText ?? "", subject: a.subject ?? "", contentDomain: a.contentDomain ?? "",
+              answered: 0, correct: 0, points: 0, maxPoints: 0,
+            };
+            q.answered++;
+            if (a.isCorrect) q.correct++;
+            q.points += a.pointsEarned ?? 0;
+            q.maxPoints += a.maxPoints ?? 1;
+            perQuestion.set(a.questionId, q);
+          }
+        }
+        const allQ = await getAllQuestions();
+        const questionsOut = Array.from(perQuestion.entries()).map(([id, q]) => {
+          const full = allQ.find((x) => x.id === id);
+          return { id, ...q, cognitiveDomain: full?.cognitiveDomain ?? "", difficulty: full?.difficulty ?? "" };
+        });
+
+        return {
+          className: cls.name,
+          classGrade: cls.grade,
+          teacherName: teacher?.name ?? "",
+          rows,
+          questions: questionsOut,
+          notSubmitted: students
+            .filter((s) => !rows.some((r) => r.studentCode === s.username))
+            .map((s) => ({ name: s.name, username: s.username })),
+        };
       }),
 
     // ─── Answer Review & Mark Adjustment ──────────────────────────────
