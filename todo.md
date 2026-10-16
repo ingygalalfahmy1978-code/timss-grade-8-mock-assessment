@@ -270,4 +270,10 @@
 - [x] Update Ingy Fahmy's supplied email address without changing her current teacher class assignments
 - [x] Confirm Yasmeen Ali as Administrator and retain Ingy Fahmy as a Teacher
 - [x] Create Yasmeen Ali's administrator account with a secure temporary password and verify access
-- [ ] Save and push the verified staff access checkpoint
+- [x] Save and push the verified staff access checkpoint (main at 31fa854)
+
+## Phase 28: Live Teacher Dashboard Roster Counts
+- [x] Return enrolled-student counts with the teacher class list
+- [x] Verify the teacher class API returns Ingy's Grade 8 counts (24 and 25)
+- [ ] Verify the live Teacher dashboard displays the correct Grade 8 class counts after publishing
+- [ ] Run validation, save, and publish the corrected live release

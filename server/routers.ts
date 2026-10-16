@@ -989,8 +989,15 @@ export const appRouter = router({
   // ─── Teacher ──────────────────────────────────────────────────────────────
   teacher: router({
     myClasses: teacherOrAdminProcedure.query(async ({ ctx }) => {
-      if (ctx.platformUser.role === "admin") return getAllClasses();
-      return getClassesForTeacher(ctx.platformUser.id);
+      const classes = ctx.platformUser.role === "admin"
+        ? await getAllClasses()
+        : await getClassesForTeacher(ctx.platformUser.id);
+      return Promise.all(
+        classes.map(async (classItem) => ({
+          ...classItem,
+          studentCount: (await getStudentsInClass(classItem.id)).length,
+        }))
+      );
     }),
 
     classStudents: teacherOrAdminProcedure
