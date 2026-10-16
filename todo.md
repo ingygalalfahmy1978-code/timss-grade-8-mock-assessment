@@ -263,4 +263,11 @@
 - [x] Create Rasha Albay as the Grade 8 Science teacher and assign all Grade 8 imported classes
 - [x] Create Rowiena Akram as the Grade 4 Science teacher and assign all Grade 4 imported classes
 - [x] Verify subject-teacher class access and the Admin Classes display
-- [ ] Save and push the verified subject-teacher assignment checkpoint
+- [x] Save and push the verified subject-teacher assignment checkpoint (main at 5b5d594)
+
+## Phase 27: Staff Administration Access
+- [x] Create the explicitly requested MarwaNo administrator account with a secure temporary password
+- [x] Update Ingy Fahmy's supplied email address without changing her current teacher class assignments
+- [x] Confirm Yasmeen Ali as Administrator and retain Ingy Fahmy as a Teacher
+- [x] Create Yasmeen Ali's administrator account with a secure temporary password and verify access
+- [ ] Save and push the verified staff access checkpoint
