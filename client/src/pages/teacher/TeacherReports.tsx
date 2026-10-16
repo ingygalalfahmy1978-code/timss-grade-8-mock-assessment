@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { usePlatformAuth } from "@/hooks/usePlatformAuth";
 import { Download, Pencil, Eye, EyeOff, CheckCircle, FileSpreadsheet } from "lucide-react";
 import { exportClassResults, exportQuestionAnalysis, type ClassExport } from "@/lib/excelExport";
+import { finiteNumber, getReportMaxScore, normalizeSubjectScore } from "@shared/reportData";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -12,10 +13,15 @@ type ReportData = {
   className: string;
   examName: string;
   totalScore: number;
-  maxScore: number;
+  maxScore?: number;
+  totalMaxPoints?: number;
   percentage: number;
   mathScore: number;
+  mathTotal?: number;
+  mathMaxPoints?: number;
   scienceScore: number;
+  scienceTotal?: number;
+  scienceMaxPoints?: number;
   strengths: string[];
   weaknesses: string[];
   recommendedInterventionGroup: string;
@@ -234,19 +240,22 @@ export default function TeacherReports() {
                     (classReports as Report[] | undefined)?.map((r) => {
                       const data = r.reportData as unknown as ReportData;
                       const isPublished = !!(r as Report).resultsPublished;
+                      const percentage = finiteNumber(data.percentage);
+                      const math = normalizeSubjectScore(data.mathScore, data.mathTotal, data.mathMaxPoints);
+                      const science = normalizeSubjectScore(data.scienceScore, data.scienceTotal, data.scienceMaxPoints);
                       return (
                         <tr key={r.id} className="hover:bg-gray-50">
                           <td className="px-5 py-3 font-medium text-gray-900">{data.studentName}</td>
                           <td className="px-5 py-3 text-gray-600">{data.examName}</td>
                           <td className="px-5 py-3">
                             <span className={`font-semibold ${
-                              data.percentage >= 70 ? "text-green-600" :
-                              data.percentage >= 50 ? "text-amber-600" : "text-red-600"
-                            }`}>{data.percentage}%</span>
-                            <span className="text-gray-400 text-xs ml-1">({data.totalScore}/{data.maxScore})</span>
+                              percentage >= 70 ? "text-green-600" :
+                              percentage >= 50 ? "text-amber-600" : "text-red-600"
+                            }`}>{percentage}%</span>
+                            <span className="text-gray-400 text-xs ml-1">({data.totalScore}/{getReportMaxScore(data)})</span>
                           </td>
-                          <td className="px-5 py-3 text-gray-600">{data.mathScore}%</td>
-                          <td className="px-5 py-3 text-gray-600">{data.scienceScore}%</td>
+                          <td className="px-5 py-3 text-gray-600">{math.percentage}%</td>
+                          <td className="px-5 py-3 text-gray-600">{science.percentage}%</td>
                           <td className="px-5 py-3">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                               data.recommendedInterventionGroup?.includes("Advanced") ? "bg-green-100 text-green-700" :

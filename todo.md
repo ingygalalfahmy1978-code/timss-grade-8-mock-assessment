@@ -242,7 +242,9 @@
 - [x] Load the 80-question Grade 4 starter pack and verify it through the Grade 4 Question Bank filter
 - [x] Generate and inspect class-results and question-analysis Excel exports from the teacher Reports interface
 - [x] Verify anonymous, student, and administrator PDF-report access boundaries
-- [ ] Make PDF report generation tolerant of incomplete legacy report data
-- [ ] Re-run TypeScript and the full automated suite after the compatibility fix
+- [x] Make PDF report generation tolerant of incomplete legacy report data
+- [x] Normalize incomplete legacy scores in the teacher Reports table and Excel export
+- [x] Verify teacher report listing preserves every class report and publication status
+- [x] Re-run TypeScript and the full automated suite after the compatibility fix (56 tests passing)
 - [ ] Save the validated release checkpoint and push it to the connected GitHub repository
 - [ ] Change live hosting visibility to Public, publish, and verify the live Grade 4/8 login page

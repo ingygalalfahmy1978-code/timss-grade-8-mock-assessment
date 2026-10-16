@@ -1063,7 +1063,14 @@ export const appRouter = router({
         if (!cls) throw new TRPCError({ code: "NOT_FOUND" });
         if (ctx.platformUser.role !== "admin" && cls.teacherId !== ctx.platformUser.id)
           throw new TRPCError({ code: "FORBIDDEN" });
-        return getReportsByClass(input.classId);
+        const [reports, attempts] = await Promise.all([
+          getReportsByClass(input.classId),
+          getAttemptsByClass(input.classId),
+        ]);
+        return reports.map((report) => ({
+          ...report,
+          resultsPublished: attempts.find((attempt) => attempt.id === report.attemptId)?.resultsPublished ?? false,
+        }));
       }),
 
     // Everything the teacher needs for the Excel export of one class (optionally one exam):
