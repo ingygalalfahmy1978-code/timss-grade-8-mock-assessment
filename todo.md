@@ -279,5 +279,5 @@
 - [x] Verify the live Teacher dashboard displays the correct Grade 8 class counts after publishing
 - [x] Fix the student sign-in redirect race after a successful login
 - [x] Re-verify the complete Grade 4 login-to-dashboard flow in preview
-- [ ] Verify the complete Grade 4 login-to-dashboard flow on the public deployment
-- [ ] Run validation, save, and publish the corrected live release
+- [x] Verify the complete Grade 4 login-to-dashboard flow on the public deployment
+- [x] Run validation, save, and publish the corrected live release
